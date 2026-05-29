@@ -1,0 +1,360 @@
+import { useEffect, useState, useMemo } from 'react'
+import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet'
+import L from 'leaflet'
+import { Crosshair, MapPin, X, Camera, Loader2, AlertTriangle } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import toast from 'react-hot-toast'
+import { Button } from '@/components/ui/Button'
+import { Input } from '@/components/ui/Input'
+import { Label } from '@/components/ui/Label'
+import { Textarea } from '@/components/ui/Textarea'
+import { Dialog } from '@/components/ui/Dialog'
+import { useAuth } from '@/contexts/AuthContext'
+import { useGeolocation } from '@/hooks/useGeolocation'
+import { usePianos } from '@/hooks/usePianos'
+import { reverseGeocode } from '@/lib/geocoding'
+import { uploadPianoPhoto, validatePhotoFile } from '@/lib/photo'
+import { haversineMeters } from '@/lib/distance'
+import { supabase } from '@/lib/supabase'
+import { logger } from '@/lib/logger'
+import { getErrorMessage } from '@/lib/errors'
+import { pianoFormSchema } from '@/lib/schemas'
+import {
+  DEFAULT_MAP_CENTER,
+  DEFAULT_MAP_ZOOM,
+  DUPLICATE_DISTANCE_METERS,
+  PIANO_COMMENT_MAX
+} from '@/lib/constants'
+import { PIANO_QUALITIES, QUALITY_LABELS, type PianoQuality } from '@/types/database'
+
+const draggableIcon = L.divIcon({
+  className: 'drag-pin',
+  html: `<div class="flex h-10 w-10 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-primary/30">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Z"/></svg>
+  </div>`,
+  iconSize: [40, 40],
+  iconAnchor: [20, 40]
+})
+
+function MapClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onPick(e.latlng.lat, e.latlng.lng)
+    }
+  })
+  return null
+}
+
+export function AddPianoFlow({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth()
+  const { locate, loading: locating } = useGeolocation()
+  const { data: pianos } = usePianos()
+  const queryClient = useQueryClient()
+
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null)
+  const [center, setCenter] = useState<[number, number]>([...DEFAULT_MAP_CENTER])
+  const [address, setAddress] = useState('')
+  const [resolvingAddress, setResolvingAddress] = useState(false)
+  const [comment, setComment] = useState('')
+  const [quality, setQuality] = useState<PianoQuality>('bon_etat')
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+
+  /** Le form est "dirty" si l'utilisateur a touché à au moins un champ significatif. */
+  const isDirty =
+    !!coords || address.trim().length > 0 || comment.trim().length > 0 || !!photoFile
+
+  useEffect(() => {
+    if (!coords) return
+    setResolvingAddress(true)
+    reverseGeocode(coords.lat, coords.lng)
+      .then((label) => setAddress(label))
+      .finally(() => setResolvingAddress(false))
+  }, [coords])
+
+  useEffect(() => {
+    if (!photoFile) {
+      setPhotoPreview(null)
+      return
+    }
+    const url = URL.createObjectURL(photoFile)
+    setPhotoPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [photoFile])
+
+  const nearbyDuplicate = useMemo(() => {
+    if (!coords || !pianos) return null
+    return (
+      pianos.find(
+        (p) => haversineMeters(coords, { lat: p.lat, lng: p.lng }) < DUPLICATE_DISTANCE_METERS
+      ) ?? null
+    )
+  }, [coords, pianos])
+
+  const useMyLocation = async () => {
+    try {
+      const c = await locate()
+      setCoords(c)
+      setCenter([c.lat, c.lng])
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Position indisponible'))
+    }
+  }
+
+  const handlePhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      validatePhotoFile(file)
+      setPhotoFile(file)
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Image invalide'))
+      e.target.value = ''
+    }
+  }
+
+  const requestClose = () => {
+    if (isDirty) setConfirmClose(true)
+    else onClose()
+  }
+
+  const handleSubmit = async () => {
+    if (!user) return
+    if (!coords) {
+      toast.error('Choisis une position')
+      return
+    }
+    const parsed = pianoFormSchema.safeParse({ address, comment, quality })
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message ?? 'Formulaire invalide')
+      return
+    }
+    setSubmitting(true)
+    try {
+      let photo_url: string | null = null
+      if (photoFile) {
+        photo_url = await uploadPianoPhoto(photoFile, user.id)
+      }
+      const { error } = await supabase.from('pianos').insert({
+        created_by: user.id,
+        lat: coords.lat,
+        lng: coords.lng,
+        address: parsed.data.address,
+        comment: parsed.data.comment,
+        quality: parsed.data.quality,
+        photo_url
+      })
+      if (error) {
+        logger.error('piano.add', 'insert failed', error, {
+          userId: user.id,
+          hasPhoto: !!photo_url
+        })
+        throw error
+      }
+      logger.info('piano.add', 'success', { userId: user.id, hasPhoto: !!photo_url })
+      toast.success('Piano ajouté !')
+      await queryClient.invalidateQueries({ queryKey: ['pianos'] })
+      onClose()
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Erreur d'ajout"))
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex flex-col bg-background animate-slide-up-modal">
+      <header className="flex items-center justify-between border-b border-border p-4">
+        <h2 className="text-lg font-semibold">Ajouter un piano</h2>
+        <button
+          onClick={requestClose}
+          aria-label="Fermer"
+          className="rounded-full p-1.5 hover:bg-accent"
+        >
+          <X className="h-6 w-6" />
+        </button>
+      </header>
+
+      <div className="flex-1 overflow-y-auto">
+        <div className="relative h-64 w-full">
+          <MapContainer
+            center={center}
+            zoom={coords ? 16 : DEFAULT_MAP_ZOOM}
+            scrollWheelZoom
+            zoomControl={false}
+            className="h-full w-full"
+            key={`${center[0]}-${center[1]}`}
+          >
+            <TileLayer
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              attribution='&copy; OSM'
+              maxZoom={19}
+            />
+            <MapClickHandler onPick={(lat, lng) => setCoords({ lat, lng })} />
+            {coords && (
+              <Marker
+                position={[coords.lat, coords.lng]}
+                icon={draggableIcon}
+                draggable
+                eventHandlers={{
+                  dragend: (e) => {
+                    const ll = e.target.getLatLng()
+                    setCoords({ lat: ll.lat, lng: ll.lng })
+                  }
+                }}
+              />
+            )}
+          </MapContainer>
+          <button
+            type="button"
+            onClick={useMyLocation}
+            disabled={locating}
+            className="absolute right-3 top-3 z-[500] flex items-center gap-1.5 rounded-full bg-background px-3 py-2 text-xs font-medium text-foreground shadow-md ring-1 ring-border hover:bg-accent disabled:opacity-60"
+          >
+            {locating ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Crosshair className="h-4 w-4" />
+            )}
+            Ma position
+          </button>
+        </div>
+
+        <div className="space-y-4 p-4">
+          {!coords && (
+            <div className="flex items-center gap-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
+              <MapPin className="h-4 w-4" /> Clique sur la carte ou utilise « Ma position ».
+            </div>
+          )}
+
+          {nearbyDuplicate && (
+            <div className="flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 p-3 text-xs text-orange-900 dark:border-orange-700 dark:bg-orange-950 dark:text-orange-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+              <div>
+                <strong>Un piano existe déjà à moins de {DUPLICATE_DISTANCE_METERS}m :</strong>{' '}
+                {nearbyDuplicate.address}. Tu peux quand même l'ajouter si c'est un piano distinct.
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label htmlFor="address">Adresse</Label>
+            <Input
+              id="address"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={resolvingAddress ? 'Résolution…' : 'Place ou clique sur la carte'}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>Photo (optionnelle)</Label>
+            <div className="flex items-center gap-3">
+              <label className="flex h-20 w-20 cursor-pointer items-center justify-center overflow-hidden rounded-md border-2 border-dashed border-border bg-muted text-muted-foreground hover:bg-accent">
+                {photoPreview ? (
+                  <img
+                    src={photoPreview}
+                    alt="aperçu"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <Camera className="h-6 w-6" />
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={handlePhoto}
+                />
+              </label>
+              {photoFile && (
+                <button
+                  type="button"
+                  onClick={() => setPhotoFile(null)}
+                  className="text-xs text-destructive"
+                >
+                  Retirer
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Qualité</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {PIANO_QUALITIES.map((q) => (
+                <button
+                  key={q}
+                  type="button"
+                  onClick={() => setQuality(q)}
+                  className={
+                    'rounded-md border px-3 py-2 text-sm transition-colors ' +
+                    (q === quality
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border bg-background hover:bg-accent')
+                  }
+                >
+                  {QUALITY_LABELS[q]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="comment">
+              Commentaire <span className="text-destructive">*</span>
+            </Label>
+            <Textarea
+              id="comment"
+              value={comment}
+              onChange={(e) => setComment(e.target.value)}
+              placeholder="Ouverture, accessibilité, état précis…"
+              maxLength={PIANO_COMMENT_MAX}
+            />
+            <p className="text-right text-xs text-muted-foreground">
+              {comment.length}/{PIANO_COMMENT_MAX}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <footer
+        className="border-t border-border bg-background p-4"
+        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
+      >
+        <Button onClick={handleSubmit} loading={submitting} className="w-full">
+          Ajouter ce piano
+        </Button>
+      </footer>
+
+      <Dialog
+        open={confirmClose}
+        onClose={() => setConfirmClose(false)}
+        title="Abandonner ce piano ?"
+      >
+        <p className="mb-4 text-sm text-muted-foreground">
+          Tu as commencé à remplir ce piano. Si tu fermes maintenant, les informations
+          seront perdues.
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1" onClick={() => setConfirmClose(false)}>
+            Continuer
+          </Button>
+          <Button
+            variant="destructive"
+            className="flex-1"
+            onClick={() => {
+              setConfirmClose(false)
+              onClose()
+            }}
+          >
+            Abandonner
+          </Button>
+        </div>
+      </Dialog>
+    </div>
+  )
+}

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Bash(npm create *)",
+      "Bash(npx tsc *)",
+      "Bash(grep -n \"Relation\\\\$1\\\\|TablesAndViews\\\\|GetGenericDatabaseWithOptions\" node_modules/@supabase/postgrest-js/dist/index.d.mts)",
+      "Bash(npm run *)",
+      "Bash(npm install *)"
+    ]
+  }
+}

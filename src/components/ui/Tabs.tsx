@@ -1,0 +1,134 @@
+import { createContext, useContext, useId, type ReactNode } from 'react'
+import { cn } from '@/lib/utils'
+
+/**
+ * Composant Tabs accessible (rôle tablist + clavier ←→).
+ * Contrôlé : le parent gère l'état actif via `value` + `onValueChange`.
+ *
+ * Usage :
+ *   <Tabs value={tab} onValueChange={setTab}>
+ *     <TabsList>
+ *       <TabsTrigger value="a">A</TabsTrigger>
+ *       <TabsTrigger value="b">B</TabsTrigger>
+ *     </TabsList>
+ *     <TabsContent value="a">…</TabsContent>
+ *     <TabsContent value="b">…</TabsContent>
+ *   </Tabs>
+ */
+
+type TabsContextValue = {
+  value: string
+  onValueChange: (v: string) => void
+  baseId: string
+}
+
+const TabsContext = createContext<TabsContextValue | undefined>(undefined)
+
+function useTabsContext() {
+  const ctx = useContext(TabsContext)
+  if (!ctx) throw new Error('TabsList/Trigger/Content must be inside <Tabs>')
+  return ctx
+}
+
+export function Tabs({
+  value,
+  onValueChange,
+  children,
+  className
+}: {
+  value: string
+  onValueChange: (v: string) => void
+  children: ReactNode
+  className?: string
+}) {
+  const baseId = useId()
+  return (
+    <TabsContext.Provider value={{ value, onValueChange, baseId }}>
+      <div className={className}>{children}</div>
+    </TabsContext.Provider>
+  )
+}
+
+export function TabsList({
+  children,
+  className,
+  scrollable = false
+}: {
+  children: ReactNode
+  className?: string
+  /** Sur mobile, si trop d'onglets, scroll horizontal. */
+  scrollable?: boolean
+}) {
+  return (
+    <div
+      role="tablist"
+      className={cn(
+        'flex border-b border-border',
+        scrollable && 'overflow-x-auto scrollbar-none',
+        className
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+export function TabsTrigger({
+  value,
+  children,
+  className,
+  disabled
+}: {
+  value: string
+  children: ReactNode
+  className?: string
+  disabled?: boolean
+}) {
+  const { value: active, onValueChange, baseId } = useTabsContext()
+  const isActive = active === value
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={isActive}
+      aria-controls={`${baseId}-panel-${value}`}
+      id={`${baseId}-tab-${value}`}
+      tabIndex={isActive ? 0 : -1}
+      disabled={disabled}
+      onClick={() => onValueChange(value)}
+      className={cn(
+        'relative whitespace-nowrap border-b-2 px-4 py-2.5 text-sm font-medium transition-colors',
+        isActive
+          ? 'border-primary text-foreground'
+          : 'border-transparent text-muted-foreground hover:text-foreground',
+        disabled && 'pointer-events-none opacity-50',
+        className
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function TabsContent({
+  value,
+  children,
+  className
+}: {
+  value: string
+  children: ReactNode
+  className?: string
+}) {
+  const { value: active, baseId } = useTabsContext()
+  if (active !== value) return null
+  return (
+    <div
+      role="tabpanel"
+      id={`${baseId}-panel-${value}`}
+      aria-labelledby={`${baseId}-tab-${value}`}
+      className={cn('animate-fade-in', className)}
+    >
+      {children}
+    </div>
+  )
+}
