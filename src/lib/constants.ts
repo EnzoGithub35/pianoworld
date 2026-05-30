@@ -83,3 +83,57 @@ export const REQUEST_MESSAGE_MAX = 2000
 
 /** Track le dernier replied_at consulté par l'user pour les badges "nouvelle réponse". */
 export const REQUESTS_LAST_SEEN_KEY = 'pianoworld:requests-last-seen'
+
+/* ===========================================================
+ * v4 — Notifications, push, sécurité, calendrier
+ * =========================================================== */
+
+/** Catégories de notification — mirror des colonnes notification_preferences. */
+export const NOTIFICATION_CATEGORIES = [
+  'notify_comments',
+  'notify_piano_updates',
+  'notify_session_conflict',
+  'notify_request_reply',
+  'notify_events'
+] as const
+export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]
+
+/** Labels FR pour les toggles de préférences dans Settings. */
+export const NOTIFICATION_LABELS: Record<NotificationCategory, string> = {
+  notify_comments: 'Commentaire sur un de mes pianos',
+  notify_piano_updates: 'Mise à jour d’état d’un de mes pianos',
+  notify_session_conflict: 'Quelqu’un joue au même moment que moi',
+  notify_request_reply: 'Réponse à mes demandes',
+  notify_events: 'Nouveaux évènements'
+}
+
+/** Cookie de consentement (bandeau RGPD). */
+export const COOKIE_CONSENT_KEY = 'pianoworld:cookie-consent'
+
+/** Clé localStorage du dernier opt-in push (anti-spam de la demande de permission). */
+export const PUSH_OPT_IN_KEY = 'pianoworld:push-opt-in'
+
+/** VAPID public key (à override par VITE_VAPID_PUBLIC_KEY en prod). */
+export const VAPID_PUBLIC_KEY_FALLBACK = import.meta.env.VITE_VAPID_PUBLIC_KEY ?? ''
+
+/** Rate limits : valeurs MIROIR de within_rate_limit() côté SQL.
+ *  Sert uniquement aux messages d'erreur UX (le SQL est la vérité). */
+export const RATE_LIMITS: Record<string, { count: number; windowLabel: string }> = {
+  piano_create: { count: 5, windowLabel: '24 h' },
+  piano_update: { count: 30, windowLabel: '24 h' },
+  piano_visit: { count: 50, windowLabel: '24 h' },
+  piano_session: { count: 10, windowLabel: '24 h' },
+  piano_report: { count: 5, windowLabel: '24 h' },
+  user_request: { count: 5, windowLabel: '7 jours' }
+}
+
+/** Onglet "Communauté" : combien de jours dans le passé / futur sont affichés. */
+export const COMMUNITY_PAST_DAYS = 7
+export const COMMUNITY_FUTURE_DAYS = 14
+
+/**
+ * Version des CGU. À incrémenter manuellement (date ISO) à chaque modification
+ * substantielle. Si `profiles.accept_cgu_version` est différent à la connexion,
+ * on peut imposer la re-lecture (à brancher plus tard via une route /cgu-update).
+ */
+export const CGU_VERSION = '2026-05-30'

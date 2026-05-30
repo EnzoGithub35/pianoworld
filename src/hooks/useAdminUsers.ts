@@ -8,10 +8,14 @@ export type AdminUserFilter = 'all' | 'banned' | 'admin'
 export type AdminUserRow = Profile & { email: string | null }
 
 /**
- * Liste des utilisateurs avec filtres. L'email n'est PAS exposé côté RLS
- * publique : on n'y accède que via les profils enrichis quand l'admin appelle
- * une fonction dédiée. Ici on se contente du profil (sans email) — l'email
- * sensible n'est affiché que dans l'auth dashboard Supabase.
+ * Liste paginée des utilisateurs côté admin. Passe par la RPC
+ * `admin_list_users` SECURITY DEFINER qui (a) refuse l'appel si l'appelant
+ * n'est pas admin, (b) contourne le revoke colonne-level sur public.profiles
+ * pour exposer `role` et `banned_at`.
+ *
+ * L'email reste à null ici — il vit dans auth.users, accessible uniquement
+ * via supabase.auth.admin côté Edge Function. Affiché dans le dashboard
+ * Supabase si besoin.
  */
 export function useAdminUsers(query: string, filter: AdminUserFilter = 'all') {
   const trimmed = query.trim()
@@ -19,15 +23,11 @@ export function useAdminUsers(query: string, filter: AdminUserFilter = 'all') {
     queryKey: ['admin-users', trimmed, filter],
     staleTime: 30_000,
     queryFn: async (): Promise<AdminUserRow[]> => {
-      let q = supabase
-        .from('profiles')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50)
-      if (trimmed.length >= 2) q = q.ilike('pseudo', `%${trimmed}%`)
-      if (filter === 'banned') q = q.not('banned_at', 'is', null)
-      if (filter === 'admin') q = q.in('role', ['admin', 'superadmin'])
-      const { data, error } = await q
+      const { data, error } = await supabase.rpc('admin_list_users', {
+        q: trimmed,
+        filter,
+        lim: 50
+      })
       if (error) {
         logger.error('admin.users', 'list failed', error, { query: trimmed, filter })
         throw error

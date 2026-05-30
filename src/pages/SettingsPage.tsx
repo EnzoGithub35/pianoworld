@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ChevronRight,
+  KeyRound,
   LogOut,
   Moon,
   Pencil,
@@ -15,6 +16,8 @@ import { useTheme } from '@/contexts/ThemeContext'
 import { EditPseudoDialog } from '@/components/Settings/EditPseudoDialog'
 import { DeleteAccountDialog } from '@/components/Settings/DeleteAccountDialog'
 import { ExportDataButton } from '@/components/Settings/ExportDataButton'
+import { ChangePasswordDialog } from '@/components/Settings/ChangePasswordDialog'
+import { NotificationPreferences } from '@/components/Settings/NotificationPreferences'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -22,7 +25,9 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <h2 className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
         {title}
       </h2>
-      <div className="overflow-hidden rounded-xl border border-border bg-card">{children}</div>
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        {children}
+      </div>
     </section>
   )
 }
@@ -86,6 +91,7 @@ export function SettingsPage() {
   const { theme, toggleTheme } = useTheme()
   const [editPseudo, setEditPseudo] = useState(false)
   const [deleteAccount, setDeleteAccount] = useState(false)
+  const [changePassword, setChangePassword] = useState(false)
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background">
@@ -102,6 +108,15 @@ export function SettingsPage() {
             onClick={() => setEditPseudo(true)}
           />
           <Row icon={Shield} label="Email" value={user?.email ?? '—'} />
+          <Row
+            icon={KeyRound}
+            label="Changer mon mot de passe"
+            onClick={() => setChangePassword(true)}
+          />
+        </Section>
+
+        <Section title="Notifications">
+          <NotificationPreferences />
         </Section>
 
         <Section title="Apparence">
@@ -124,7 +139,9 @@ export function SettingsPage() {
               <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
                 <Shield className="h-4 w-4" />
               </span>
-              <span className="text-sm font-medium">Mentions légales & confidentialité</span>
+              <span className="text-sm font-medium">
+                Mentions légales & confidentialité
+              </span>
             </span>
             <ChevronRight className="h-4 w-4 text-muted-foreground" />
           </Link>
@@ -180,6 +197,10 @@ export function SettingsPage() {
 
       <EditPseudoDialog open={editPseudo} onClose={() => setEditPseudo(false)} />
       <DeleteAccountDialog open={deleteAccount} onClose={() => setDeleteAccount(false)} />
+      <ChangePasswordDialog
+        open={changePassword}
+        onClose={() => setChangePassword(false)}
+      />
     </div>
   )
 }
