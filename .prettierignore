@@ -1,0 +1,9 @@
+dist
+node_modules
+coverage
+.husky
+supabase/.branches
+supabase/.temp
+*.log
+*.lock
+package-lock.json

@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Annule automatiquement les runs en cours sur la même branche si un nouveau
+# push arrive — économise les minutes Actions sur les rafales de commits.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Job rapide (< 2 min). Bloque le merge si rouge.
+  quality:
+    name: Typecheck + lint + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: TypeScript type check
+        run: npx tsc -b --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests (Vitest)
+        run: npm test
+
+      - name: Coverage report
+        # Coverage non bloquant — informatif uniquement tant que B.3/B.4/B.5
+        # ne sont pas en place (les seuils Vitest existants suffisent à
+        # protéger src/lib/).
+        run: npm run test:coverage -- --reporter=verbose
+        continue-on-error: true
+
+  # Job indépendant : valide que le bundle compile et reste sous budget.
+  # Tourne en parallèle de quality pour économiser le wall-clock.
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Variables d'env minimales nécessaires pour que `vite build` ne crash
+      # pas sur l'init Supabase. Valeurs factices — pas de runtime.
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-anon-key-placeholder
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Build
+        run: npm run build
+
+      - name: Check bundle size budget (index chunk < 100 KB gzip)
+        # Cf. statut v1 dans CLAUDE.md : on garde index initial sous 100 KB gzip.
+        # Lit la sortie de vite build et fail si on dépasse.
+        run: |
+          INDEX_SIZE=$(find dist/assets -name 'index-*.js' -exec gzip -c {} \; | wc -c | awk '{print int($1/1024)}')
+          echo "index chunk gzip size: ${INDEX_SIZE} KB"
+          if [ "$INDEX_SIZE" -gt 100 ]; then
+            echo "::error::index chunk dépasse 100 KB gzip ($INDEX_SIZE KB)"
+            exit 1
+          fi
+
+  # Audit npm en background — non bloquant, info Dependabot complémentaire.
+  audit:
+    name: npm audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+      - name: Audit (high & critical only)
+        run: npm audit --audit-level=high
+        continue-on-error: true
