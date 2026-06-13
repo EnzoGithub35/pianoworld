@@ -7,41 +7,30 @@ import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { getErrorMessage } from '@/lib/errors'
 
+/**
+ * Export RGPD complet de toutes les données touchant l'utilisateur courant.
+ *
+ * Passe par la RPC SECURITY DEFINER `export_my_data()` qui agrège côté serveur :
+ * profile, pianos, piano_updates, piano_reports, piano_visits, piano_sessions,
+ * event_participants, user_requests, notification_preferences, push_subscriptions.
+ *
+ * Les push subscriptions sont exposées sans p256dh ni auth_secret (sensibles) ;
+ * seuls endpoint + métadonnées sortent.
+ */
 export function ExportDataButton() {
-  const { user, profile } = useAuth()
+  const { user } = useAuth()
   const [exporting, setExporting] = useState(false)
 
   const handleExport = async () => {
     if (!user) return
     setExporting(true)
     try {
-      const [pianosRes, updatesRes, reportsRes] = await Promise.all([
-        supabase.from('pianos').select('*').eq('created_by', user.id),
-        supabase.from('piano_updates').select('*').eq('updated_by', user.id),
-        supabase.from('piano_reports').select('*').eq('reported_by', user.id)
-      ])
-      if (pianosRes.error) {
-        logger.error('settings.export', 'pianos failed', pianosRes.error)
-        throw pianosRes.error
+      const { data, error } = await supabase.rpc('export_my_data')
+      if (error) {
+        logger.error('settings.export', 'rpc failed', error)
+        throw error
       }
-      if (updatesRes.error) {
-        logger.error('settings.export', 'updates failed', updatesRes.error)
-        throw updatesRes.error
-      }
-      if (reportsRes.error) {
-        logger.error('settings.export', 'reports failed', reportsRes.error)
-        throw reportsRes.error
-      }
-
-      const payload = {
-        exported_at: new Date().toISOString(),
-        user: { id: user.id, email: user.email },
-        profile,
-        pianos: pianosRes.data ?? [],
-        piano_updates: updatesRes.data ?? [],
-        piano_reports: reportsRes.data ?? []
-      }
-      const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      const blob = new Blob([JSON.stringify(data ?? {}, null, 2)], {
         type: 'application/json'
       })
       const url = URL.createObjectURL(blob)
@@ -52,11 +41,7 @@ export function ExportDataButton() {
       a.click()
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
-      logger.info('settings.export', 'downloaded', {
-        pianos: payload.pianos.length,
-        updates: payload.piano_updates.length,
-        reports: payload.piano_reports.length
-      })
+      logger.info('settings.export', 'downloaded')
       toast.success('Export téléchargé')
     } catch (err) {
       toast.error(getErrorMessage(err, 'Export échoué'))

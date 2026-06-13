@@ -4,9 +4,11 @@ import { Search, ShieldCheck, UserMinus, UserPlus } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Input } from '@/components/ui/Input'
+import { Label } from '@/components/ui/Label'
 import { Button } from '@/components/ui/Button'
 import { Avatar } from '@/components/ui/Avatar'
 import { Badge } from '@/components/ui/Badge'
+import { Dialog } from '@/components/ui/Dialog'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useAuth } from '@/contexts/AuthContext'
@@ -17,7 +19,7 @@ import {
 } from '@/hooks/useAdminUsers'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getErrorMessage, isInvalidPassword } from '@/lib/errors'
 import { cn } from '@/lib/utils'
 
 function RoleBadge({ role }: { role: AdminUserRow['role'] }) {
@@ -26,12 +28,17 @@ function RoleBadge({ role }: { role: AdminUserRow['role'] }) {
   return null
 }
 
+type BanTarget = { user: AdminUserRow; ban: boolean }
+
 export function UsersTab() {
   const { profile: me, isSuperadmin } = useAuth()
   const queryClient = useQueryClient()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<AdminUserFilter>('all')
   const [pendingId, setPendingId] = useState<string | null>(null)
+  const [banTarget, setBanTarget] = useState<BanTarget | null>(null)
+  const [banPassword, setBanPassword] = useState('')
+  const [banSubmitting, setBanSubmitting] = useState(false)
   const { data: users, isLoading } = useAdminUsers(query, filter)
 
   const refresh = async () => {
@@ -39,25 +46,52 @@ export function UsersTab() {
     await queryClient.invalidateQueries({ queryKey: ['admin-kpis'] })
   }
 
-  const handleBan = async (user: AdminUserRow, ban: boolean) => {
-    setPendingId(user.id)
+  const handleBanConfirm = async () => {
+    if (!banTarget) return
+    if (!banPassword) {
+      toast.error('Mot de passe requis')
+      return
+    }
+    setBanSubmitting(true)
     try {
       const { error } = await supabase.rpc('set_user_banned', {
-        target: user.id,
-        banned: ban
+        target: banTarget.user.id,
+        banned: banTarget.ban,
+        p_password: banPassword
       })
       if (error) {
-        logger.error('admin.ban', 'rpc failed', error, { target: user.id, ban })
+        if (isInvalidPassword(error)) {
+          toast.error('Mot de passe incorrect')
+          return
+        }
+        logger.error('admin.ban', 'rpc failed', error, {
+          target: banTarget.user.id,
+          ban: banTarget.ban
+        })
         throw error
       }
-      logger.warn('admin.ban', ban ? 'banned' : 'unbanned', { target: user.id })
-      toast.success(ban ? `@${user.pseudo} banni` : `@${user.pseudo} débanni`)
+      logger.warn('admin.ban', banTarget.ban ? 'banned' : 'unbanned', {
+        target: banTarget.user.id
+      })
+      toast.success(
+        banTarget.ban
+          ? `@${banTarget.user.pseudo} banni`
+          : `@${banTarget.user.pseudo} débanni`
+      )
+      setBanTarget(null)
+      setBanPassword('')
       await refresh()
     } catch (err) {
       toast.error(getErrorMessage(err, 'Action échouée'))
     } finally {
-      setPendingId(null)
+      setBanSubmitting(false)
     }
+  }
+
+  const closeBanDialog = () => {
+    if (banSubmitting) return
+    setBanTarget(null)
+    setBanPassword('')
   }
 
   const handlePromote = async (user: AdminUserRow, makeAdmin: boolean) => {
@@ -171,7 +205,7 @@ export function UsersTab() {
                     size="sm"
                     variant={isBanned ? 'outline' : 'destructive'}
                     loading={busy}
-                    onClick={() => handleBan(u, !isBanned)}
+                    onClick={() => setBanTarget({ user: u, ban: !isBanned })}
                     className="gap-1.5"
                   >
                     <UserMinus className="h-3.5 w-3.5" />
@@ -207,6 +241,56 @@ export function UsersTab() {
           )
         })}
       </ul>
+
+      <Dialog
+        open={!!banTarget}
+        onClose={closeBanDialog}
+        title={
+          banTarget?.ban
+            ? `Bannir @${banTarget.user.pseudo} ?`
+            : `Débannir @${banTarget?.user.pseudo} ?`
+        }
+      >
+        {banTarget && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {banTarget.ban
+                ? "L'utilisateur ne pourra plus créer de piano, MAJ, session ou demande. Sa session active sera invalidée."
+                : "L'utilisateur retrouvera tous ses droits."}
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="ban-password">Confirme avec ton mot de passe</Label>
+              <Input
+                id="ban-password"
+                type="password"
+                autoComplete="current-password"
+                value={banPassword}
+                onChange={(e) => setBanPassword(e.target.value)}
+                placeholder="Ton mot de passe"
+                autoFocus
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={closeBanDialog}
+                disabled={banSubmitting}
+              >
+                Annuler
+              </Button>
+              <Button
+                variant={banTarget.ban ? 'destructive' : 'default'}
+                className="flex-1"
+                loading={banSubmitting}
+                onClick={handleBanConfirm}
+              >
+                {banTarget.ban ? 'Bannir' : 'Débannir'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   )
 }

@@ -5,12 +5,14 @@ import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
 import { Dialog } from '@/components/ui/Dialog'
+import { Input } from '@/components/ui/Input'
+import { Label } from '@/components/ui/Label'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { useAdminReports, type ReportWithContext } from '@/hooks/useAdminReports'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getErrorMessage, isInvalidPassword } from '@/lib/errors'
 import { fromNow } from '@/lib/date'
 
 export function ReportsTab() {
@@ -18,6 +20,7 @@ export function ReportsTab() {
   const { data: reports, isLoading } = useAdminReports()
   const [pendingId, setPendingId] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<ReportWithContext | null>(null)
+  const [deletePassword, setDeletePassword] = useState('')
 
   const refresh = async () => {
     await queryClient.invalidateQueries({ queryKey: ['admin-reports'] })
@@ -45,11 +48,22 @@ export function ReportsTab() {
 
   const handleForceDelete = async () => {
     if (!pendingDelete?.piano) return
+    if (!deletePassword) {
+      toast.error('Mot de passe requis')
+      return
+    }
     const piano = pendingDelete.piano
     setPendingId(pendingDelete.id)
     try {
-      const { error } = await supabase.rpc('force_delete_piano', { target: piano.id })
+      const { error } = await supabase.rpc('force_delete_piano', {
+        target: piano.id,
+        p_password: deletePassword
+      })
       if (error) {
+        if (isInvalidPassword(error)) {
+          toast.error('Mot de passe incorrect')
+          return
+        }
         logger.error('admin.forceDelete', 'rpc failed', error, { pianoId: piano.id })
         throw error
       }
@@ -58,12 +72,19 @@ export function ReportsTab() {
       await supabase.rpc('resolve_report', { report_id: pendingDelete.id })
       toast.success('Piano supprimé et signalement classé')
       setPendingDelete(null)
+      setDeletePassword('')
       await refresh()
     } catch (err) {
       toast.error(getErrorMessage(err, 'Action échouée'))
     } finally {
       setPendingId(null)
     }
+  }
+
+  const closeDeleteDialog = () => {
+    if (pendingId === pendingDelete?.id) return
+    setPendingDelete(null)
+    setDeletePassword('')
   }
 
   if (isLoading) {
@@ -102,9 +123,7 @@ export function ReportsTab() {
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm">
-                  <span className="font-medium">
-                    @{r.reporter?.pseudo ?? 'inconnu'}
-                  </span>{' '}
+                  <span className="font-medium">@{r.reporter?.pseudo ?? 'inconnu'}</span>{' '}
                   <span className="text-muted-foreground">
                     a signalé {fromNow(r.created_at)}
                   </span>
@@ -164,25 +183,44 @@ export function ReportsTab() {
 
       <Dialog
         open={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
+        onClose={closeDeleteDialog}
         title="Supprimer ce piano ?"
       >
-        <p className="mb-4 text-sm text-muted-foreground">
-          Le piano sera marqué comme supprimé et disparaîtra de la carte. Le signalement
-          sera également classé.
-        </p>
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={() => setPendingDelete(null)}>
-            Annuler
-          </Button>
-          <Button
-            variant="destructive"
-            className="flex-1"
-            loading={pendingId === pendingDelete?.id}
-            onClick={handleForceDelete}
-          >
-            Confirmer
-          </Button>
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            Le piano sera marqué comme supprimé et disparaîtra de la carte. Le signalement
+            sera également classé.
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="force-delete-password">Confirme avec ton mot de passe</Label>
+            <Input
+              id="force-delete-password"
+              type="password"
+              autoComplete="current-password"
+              value={deletePassword}
+              onChange={(e) => setDeletePassword(e.target.value)}
+              placeholder="Ton mot de passe"
+              autoFocus
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              onClick={closeDeleteDialog}
+              disabled={pendingId === pendingDelete?.id}
+            >
+              Annuler
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              loading={pendingId === pendingDelete?.id}
+              onClick={handleForceDelete}
+            >
+              Supprimer
+            </Button>
+          </div>
         </div>
       </Dialog>
     </>

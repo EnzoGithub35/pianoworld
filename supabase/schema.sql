@@ -541,9 +541,1299 @@ revoke all on function public.reply_to_request(uuid, text) from public;
 grant execute on function public.reply_to_request(uuid, text) to authenticated;
 
 -- ============================
--- 10. Bootstrap superadmin (idempotent — à ré-exécuter après le 1er signup)
+-- 10. v4 — Préférences de notifications + Push + Outbox + Rate limits
+-- ============================
+
+-- 10.a. Préférences de notification (1 ligne par user, créée automatiquement)
+create table if not exists public.notification_preferences (
+  user_id                 uuid primary key references public.profiles(id) on delete cascade,
+  notify_comments         boolean not null default true,
+  notify_session_conflict boolean not null default true,
+  notify_request_reply    boolean not null default true,
+  notify_events           boolean not null default true,
+  notify_piano_updates    boolean not null default true,
+  push_enabled            boolean not null default false,
+  updated_at              timestamptz not null default now()
+);
+
+-- Auto-création des prefs au signup (via trigger sur profiles)
+create or replace function public.ensure_notification_prefs()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.notification_preferences(user_id)
+  values (new.id)
+  on conflict (user_id) do nothing;
+  return new;
+end$$;
+
+drop trigger if exists profiles_ensure_notif_prefs on public.profiles;
+create trigger profiles_ensure_notif_prefs
+  after insert on public.profiles
+  for each row execute function public.ensure_notification_prefs();
+
+-- Backfill : créer une ligne pour les profils déjà existants
+insert into public.notification_preferences(user_id)
+select id from public.profiles
+on conflict (user_id) do nothing;
+
+alter table public.notification_preferences enable row level security;
+
+drop policy if exists notif_prefs_select_own on public.notification_preferences;
+create policy notif_prefs_select_own on public.notification_preferences
+  for select using (auth.uid() = user_id);
+
+drop policy if exists notif_prefs_insert_own on public.notification_preferences;
+create policy notif_prefs_insert_own on public.notification_preferences
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists notif_prefs_update_own on public.notification_preferences;
+create policy notif_prefs_update_own on public.notification_preferences
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- 10.b. Push subscriptions (Web Push API)
+create table if not exists public.push_subscriptions (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references public.profiles(id) on delete cascade,
+  endpoint     text not null unique,
+  p256dh       text not null,
+  auth_secret  text not null,
+  user_agent   text,
+  created_at   timestamptz not null default now(),
+  last_used_at timestamptz not null default now()
+);
+create index if not exists push_subscriptions_user_idx
+  on public.push_subscriptions(user_id);
+
+alter table public.push_subscriptions enable row level security;
+
+drop policy if exists push_sub_select_own on public.push_subscriptions;
+create policy push_sub_select_own on public.push_subscriptions
+  for select using (auth.uid() = user_id);
+
+drop policy if exists push_sub_insert_own on public.push_subscriptions;
+create policy push_sub_insert_own on public.push_subscriptions
+  for insert with check (
+    auth.uid() = user_id and not public.is_banned(auth.uid())
+  );
+
+drop policy if exists push_sub_delete_own on public.push_subscriptions;
+create policy push_sub_delete_own on public.push_subscriptions
+  for delete using (auth.uid() = user_id);
+
+-- 10.c. Outbox des notifications (lue par Edge Function via webhook)
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'notification_kind') then
+    create type notification_kind as enum (
+      'piano_comment',
+      'piano_update',
+      'session_conflict',
+      'request_reply',
+      'event_created'
+    );
+  end if;
+end$$;
+
+create table if not exists public.notifications_outbox (
+  id           uuid primary key default gen_random_uuid(),
+  recipient_id uuid not null references public.profiles(id) on delete cascade,
+  kind         notification_kind not null,
+  payload      jsonb not null,
+  created_at   timestamptz not null default now(),
+  sent_at      timestamptz,
+  error        text
+);
+create index if not exists notifications_outbox_pending_idx
+  on public.notifications_outbox(created_at)
+  where sent_at is null;
+create index if not exists notifications_outbox_recipient_idx
+  on public.notifications_outbox(recipient_id, created_at desc);
+
+alter table public.notifications_outbox enable row level security;
+
+-- Lecture admin uniquement (debug). L'Edge Function utilise service_role.
+drop policy if exists notif_outbox_select_admin on public.notifications_outbox;
+create policy notif_outbox_select_admin on public.notifications_outbox
+  for select using (public.is_admin());
+
+-- 10.d. Triggers : queue les notifications dans l'outbox
+
+-- Sur piano_updates : notifier le créateur du piano (sauf si c'est lui-même qui MAJ)
+create or replace function public.queue_piano_update_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_piano_creator uuid;
+  v_piano_address text;
+  v_kind notification_kind;
+begin
+  select created_by, address into v_piano_creator, v_piano_address
+  from public.pianos where id = new.piano_id and is_deleted = false;
+
+  if v_piano_creator is null or v_piano_creator = new.updated_by then
+    return new;
+  end if;
+
+  -- Si un commentaire est présent → kind = piano_comment (priorité pour le mail)
+  v_kind := case when new.comment is not null and char_length(new.comment) > 0
+                 then 'piano_comment'::notification_kind
+                 else 'piano_update'::notification_kind end;
+
+  insert into public.notifications_outbox(recipient_id, kind, payload)
+  values (
+    v_piano_creator,
+    v_kind,
+    jsonb_build_object(
+      'piano_id', new.piano_id,
+      'piano_address', v_piano_address,
+      'update_id', new.id,
+      'still_there', new.still_there,
+      'new_quality', new.new_quality,
+      'comment', new.comment,
+      'updated_by', new.updated_by
+    )
+  );
+  return new;
+end$$;
+
+drop trigger if exists piano_updates_notify on public.piano_updates;
+create trigger piano_updates_notify
+  after insert on public.piano_updates
+  for each row execute function public.queue_piano_update_notification();
+
+-- Sur piano_sessions : notifier les users qui ont une session chevauchante sur le même piano
+create or replace function public.queue_session_conflict_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_overlap record;
+  v_piano_address text;
+begin
+  if new.cancelled_at is not null then
+    return new;
+  end if;
+
+  select address into v_piano_address
+  from public.pianos where id = new.piano_id and is_deleted = false;
+
+  if v_piano_address is null then
+    return new;
+  end if;
+
+  for v_overlap in
+    select s.user_id, s.starts_at, s.duration_min
+    from public.piano_sessions s
+    where s.piano_id = new.piano_id
+      and s.id <> new.id
+      and s.user_id <> new.user_id
+      and s.cancelled_at is null
+      and tstzrange(s.starts_at, s.starts_at + make_interval(mins => s.duration_min)) &&
+          tstzrange(new.starts_at, new.starts_at + make_interval(mins => new.duration_min))
+  loop
+    insert into public.notifications_outbox(recipient_id, kind, payload)
+    values (
+      v_overlap.user_id,
+      'session_conflict',
+      jsonb_build_object(
+        'piano_id', new.piano_id,
+        'piano_address', v_piano_address,
+        'session_id', new.id,
+        'other_user_id', new.user_id,
+        'their_starts_at', new.starts_at,
+        'their_duration_min', new.duration_min,
+        'my_starts_at', v_overlap.starts_at
+      )
+    );
+  end loop;
+  return new;
+end$$;
+
+drop trigger if exists piano_sessions_notify_conflict on public.piano_sessions;
+create trigger piano_sessions_notify_conflict
+  after insert on public.piano_sessions
+  for each row execute function public.queue_session_conflict_notification();
+
+-- Sur events : notifier tous les users (sauf le créateur)
+-- Filtre par préférence `notify_events` pour respecter le consentement RGPD.
+-- La jointure inner sur notification_preferences garantit qu'on ne queue rien
+-- pour un user qui a coché "off". Le trigger profiles_ensure_notif_prefs garantit
+-- qu'une ligne prefs existe pour tout profile actif.
+create or replace function public.queue_event_notifications()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.cancelled_at is not null then return new; end if;
+
+  insert into public.notifications_outbox(recipient_id, kind, payload)
+  select
+    p.id,
+    'event_created'::notification_kind,
+    jsonb_build_object(
+      'event_id', new.id,
+      'title', new.title,
+      'location', new.location,
+      'starts_at', new.starts_at
+    )
+  from public.profiles p
+  inner join public.notification_preferences np on np.user_id = p.id
+  where p.id <> new.created_by
+    and p.banned_at is null
+    and np.notify_events = true;
+  return new;
+end$$;
+
+drop trigger if exists events_notify on public.events;
+create trigger events_notify
+  after insert on public.events
+  for each row execute function public.queue_event_notifications();
+
+-- Étendre reply_to_request pour pusher dans l'outbox
+create or replace function public.reply_to_request(request_id uuid, reply text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid;
+  v_subject text;
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if reply is null or char_length(reply) = 0 or char_length(reply) > 2000 then
+    raise exception 'invalid reply';
+  end if;
+
+  update public.user_requests
+  set admin_reply = reply,
+      replied_at = now(),
+      replied_by = auth.uid(),
+      status = 'answered'
+  where id = request_id
+  returning user_id, subject into v_user_id, v_subject;
+
+  if v_user_id is not null then
+    insert into public.notifications_outbox(recipient_id, kind, payload)
+    values (
+      v_user_id,
+      'request_reply',
+      jsonb_build_object(
+        'request_id', request_id,
+        'subject', v_subject,
+        'reply', reply
+      )
+    );
+  end if;
+end$$;
+
+-- 10.e. Rate limits (enforcés au niveau RLS via fonction within_rate_limit)
+-- Conventions de limites (modifiables ici sans toucher l'app) :
+--   piano_create  : 5 / 24h
+--   piano_update  : 30 / 24h
+--   piano_visit   : 50 / 24h
+--   piano_session : 10 / 24h
+--   piano_report  : 5 / 24h
+--   user_request  : 5 / 7j
+create or replace function public.within_rate_limit(action_name text)
+returns boolean
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_count int;
+  v_max int;
+  v_window interval;
+begin
+  if v_uid is null then return false; end if;
+
+  case action_name
+    when 'piano_create' then
+      v_max := 5; v_window := interval '24 hours';
+      select count(*) into v_count from public.pianos
+        where created_by = v_uid and created_at >= now() - v_window;
+    when 'piano_update' then
+      v_max := 30; v_window := interval '24 hours';
+      select count(*) into v_count from public.piano_updates
+        where updated_by = v_uid and created_at >= now() - v_window;
+    when 'piano_visit' then
+      v_max := 50; v_window := interval '24 hours';
+      select count(*) into v_count from public.piano_visits
+        where user_id = v_uid and visited_at >= now() - v_window;
+    when 'piano_session' then
+      v_max := 10; v_window := interval '24 hours';
+      select count(*) into v_count from public.piano_sessions
+        where user_id = v_uid and created_at >= now() - v_window;
+    when 'piano_report' then
+      v_max := 5; v_window := interval '24 hours';
+      select count(*) into v_count from public.piano_reports
+        where reported_by = v_uid and created_at >= now() - v_window;
+    when 'user_request' then
+      v_max := 5; v_window := interval '7 days';
+      select count(*) into v_count from public.user_requests
+        where user_id = v_uid and created_at >= now() - v_window;
+    else
+      return false;
+  end case;
+
+  return v_count < v_max;
+end$$;
+
+grant execute on function public.within_rate_limit(text) to authenticated;
+
+-- Réinscrire les policies INSERT avec le check rate-limit en plus
+drop policy if exists pianos_insert on public.pianos;
+create policy pianos_insert on public.pianos
+  for insert with check (
+    auth.uid() = created_by
+    and not public.is_banned(auth.uid())
+    and public.within_rate_limit('piano_create')
+  );
+
+drop policy if exists piano_updates_insert on public.piano_updates;
+create policy piano_updates_insert on public.piano_updates
+  for insert with check (
+    auth.uid() = updated_by
+    and not public.is_banned(auth.uid())
+    and public.within_rate_limit('piano_update')
+  );
+
+drop policy if exists piano_visits_insert on public.piano_visits;
+create policy piano_visits_insert on public.piano_visits
+  for insert with check (
+    auth.uid() = user_id
+    and not public.is_banned(auth.uid())
+    and public.within_rate_limit('piano_visit')
+  );
+
+drop policy if exists piano_sessions_insert on public.piano_sessions;
+create policy piano_sessions_insert on public.piano_sessions
+  for insert with check (
+    auth.uid() = user_id
+    and not public.is_banned(auth.uid())
+    and public.within_rate_limit('piano_session')
+  );
+
+drop policy if exists piano_reports_insert on public.piano_reports;
+create policy piano_reports_insert on public.piano_reports
+  for insert with check (
+    auth.uid() = reported_by
+    and not public.is_banned(auth.uid())
+    and public.within_rate_limit('piano_report')
+  );
+
+drop policy if exists user_requests_insert_self on public.user_requests;
+create policy user_requests_insert_self on public.user_requests
+  for insert with check (
+    auth.uid() = user_id
+    and not public.is_banned(auth.uid())
+    and public.within_rate_limit('user_request')
+  );
+
+-- 10.f. RPC marque outbox comme envoyé (appelée par Edge Function via service_role
+-- mais sécurité belt-and-suspenders au cas où)
+create or replace function public.mark_notification_sent(notif_id uuid, err text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.notifications_outbox
+  set sent_at = now(), error = err
+  where id = notif_id;
+end$$;
+
+revoke all on function public.mark_notification_sent(uuid, text) from public;
+-- Pas de grant à authenticated : service_role uniquement
+
+-- 10.g. Vérification du mot de passe courant (utilisée par ChangePasswordDialog).
+-- Évite de devoir refaire un signInWithPassword côté client, qui rotate le
+-- refresh token et déconnecte les autres devices/onglets.
+-- Sécurité : security definer + lecture restreinte au seul auth.users.id =
+-- auth.uid(). Le hash ne sort jamais de la fonction. pgcrypto.crypt() compare
+-- en temps constant.
+create extension if not exists pgcrypto with schema extensions;
+
+create or replace function public.verify_my_password(p text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public, auth, extensions
+as $$
+declare
+  v_hash text;
+begin
+  if auth.uid() is null then
+    return false;
+  end if;
+  if p is null or char_length(p) = 0 then
+    return false;
+  end if;
+  select encrypted_password into v_hash
+  from auth.users
+  where id = auth.uid();
+  if v_hash is null then
+    return false;
+  end if;
+  return v_hash = extensions.crypt(p, v_hash);
+end$$;
+
+revoke all on function public.verify_my_password(text) from public;
+grant execute on function public.verify_my_password(text) to authenticated;
+
+-- ============================
+-- 11. v5 — Durcissement P0
+-- ============================
+
+-- 11.a. Column-level grants sur profiles
+-- Avant : `profiles_select USING (true)` exposait role et banned_at à anon.
+-- → liste publique des admins (ciblage social-eng) + liste des bannis.
+--
+-- Stratégie : on garde la RLS permissive (joins PostgREST type
+-- `author:profiles!fk(pseudo)` doivent continuer à marcher), mais on retire
+-- le droit SELECT sur les colonnes sensibles via GRANT colonne-level.
+--
+-- Lecture self/admin : passe par les deux RPCs SECURITY DEFINER ci-dessous,
+-- qui contournent l'absence de grant en s'exécutant comme `postgres`.
+revoke select on public.profiles from anon, authenticated;
+grant select (id, pseudo, created_at) on public.profiles to anon, authenticated;
+
+-- RPC self : remplace AuthContext.fetchProfile pour permettre la lecture
+-- complète de la ligne du user courant (role, banned_at). Toute valeur null
+-- = user non authentifié ou profile manquant.
+create or replace function public.get_my_profile()
+returns public.profiles
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select * from public.profiles where id = auth.uid();
+$$;
+
+revoke all on function public.get_my_profile() from public;
+grant execute on function public.get_my_profile() to authenticated;
+
+-- RPC admin : liste paginée + filtrée des profils complets (avec role et
+-- banned_at). Réservé admin/superadmin. La projection email reste à null —
+-- l'email vit dans auth.users, accessible uniquement via admin API côté
+-- Edge Function.
+create or replace function public.admin_list_users(
+  q text default '',
+  filter text default 'all',
+  lim int default 50
+) returns setof public.profiles
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if lim is null or lim < 1 or lim > 200 then
+    lim := 50;
+  end if;
+  return query
+    select * from public.profiles
+    where (q = '' or pseudo ilike '%' || q || '%')
+      and (
+        filter = 'all'
+        or (filter = 'banned' and banned_at is not null)
+        or (filter = 'admin' and role in ('admin', 'superadmin'))
+      )
+    order by created_at desc
+    limit lim;
+end$$;
+
+revoke all on function public.admin_list_users(text, text, int) from public;
+grant execute on function public.admin_list_users(text, text, int) to authenticated;
+
+-- 11.b. Rate limiting bulletproof
+-- Avant : within_rate_limit() était STABLE → snapshot du COUNT au début de
+-- transaction. Un INSERT batch ou Promise.all parallèle voit toujours le
+-- même count et passe à travers la limite.
+--
+-- Stratégie : trigger BEFORE INSERT générique enforce_rate_limit() qui prend
+-- un advisory lock par (user, action) puis UPSERT atomique dans une table
+-- dédiée. La table est verrouillée pendant la durée du check → impossible
+-- de bypasser via parallélisme ou batch.
+
+create table if not exists public.rate_limit_buckets (
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  action       text not null,
+  window_start timestamptz not null,
+  count        int not null default 0,
+  primary key (user_id, action, window_start)
+);
+create index if not exists rate_limit_buckets_lookup_idx
+  on public.rate_limit_buckets(user_id, action, window_start);
+
+alter table public.rate_limit_buckets enable row level security;
+-- Aucune policy : nul ne peut lire/écrire directement. Le trigger
+-- enforce_rate_limit (SECURITY DEFINER) gère tout côté serveur.
+revoke all on public.rate_limit_buckets from anon, authenticated;
+
+create or replace function public.enforce_rate_limit()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_action  text     := TG_ARGV[0];
+  v_max     int      := TG_ARGV[1]::int;
+  v_window  interval := TG_ARGV[2]::interval;
+  v_uid     uuid;
+  v_bucket  timestamptz;
+  v_total   int;
+begin
+  v_uid := coalesce(
+    case when TG_TABLE_NAME = 'pianos' then (row_to_json(NEW)->>'created_by')::uuid end,
+    case when TG_TABLE_NAME = 'piano_updates' then (row_to_json(NEW)->>'updated_by')::uuid end,
+    case when TG_TABLE_NAME = 'piano_reports' then (row_to_json(NEW)->>'reported_by')::uuid end,
+    case when TG_TABLE_NAME in ('piano_visits', 'piano_sessions', 'user_requests')
+      then (row_to_json(NEW)->>'user_id')::uuid end
+  );
+  if v_uid is null then
+    raise exception 'rate_limit: cannot resolve user_id on table %', TG_TABLE_NAME;
+  end if;
+
+  -- Sérialise les checks par (user, action) sur la durée de la transaction.
+  -- Empêche que deux INSERT concurrents voient tous les deux count = max-1.
+  perform pg_advisory_xact_lock(hashtext(v_uid::text || ':' || v_action));
+
+  v_bucket := date_trunc('minute', now());
+
+  insert into public.rate_limit_buckets(user_id, action, window_start, count)
+  values (v_uid, v_action, v_bucket, 1)
+  on conflict (user_id, action, window_start)
+  do update set count = public.rate_limit_buckets.count + 1;
+
+  select coalesce(sum(count), 0) into v_total
+  from public.rate_limit_buckets
+  where user_id = v_uid
+    and action = v_action
+    and window_start >= now() - v_window;
+
+  if v_total > v_max then
+    raise exception 'rate_limit_exceeded'
+      using errcode = 'P0001', hint = v_action;
+  end if;
+  return NEW;
+end$$;
+
+revoke all on function public.enforce_rate_limit() from public;
+
+-- Remplace l'ancien within_rate_limit dans les policies INSERT.
+-- On enlève l'ancien check côté policy (mais on garde la fonction
+-- within_rate_limit pour compat / non-régression silencieuse).
+drop policy if exists pianos_insert on public.pianos;
+create policy pianos_insert on public.pianos
+  for insert with check (
+    auth.uid() = created_by and not public.is_banned(auth.uid())
+  );
+
+drop policy if exists piano_updates_insert on public.piano_updates;
+create policy piano_updates_insert on public.piano_updates
+  for insert with check (
+    auth.uid() = updated_by and not public.is_banned(auth.uid())
+  );
+
+drop policy if exists piano_visits_insert on public.piano_visits;
+create policy piano_visits_insert on public.piano_visits
+  for insert with check (
+    auth.uid() = user_id and not public.is_banned(auth.uid())
+  );
+
+drop policy if exists piano_sessions_insert on public.piano_sessions;
+create policy piano_sessions_insert on public.piano_sessions
+  for insert with check (
+    auth.uid() = user_id and not public.is_banned(auth.uid())
+  );
+
+drop policy if exists piano_reports_insert on public.piano_reports;
+create policy piano_reports_insert on public.piano_reports
+  for insert with check (
+    auth.uid() = reported_by and not public.is_banned(auth.uid())
+  );
+
+drop policy if exists user_requests_insert_self on public.user_requests;
+create policy user_requests_insert_self on public.user_requests
+  for insert with check (
+    auth.uid() = user_id and not public.is_banned(auth.uid())
+  );
+
+-- Triggers BEFORE INSERT : un par table * action.
+drop trigger if exists pianos_rate_limit on public.pianos;
+create trigger pianos_rate_limit
+  before insert on public.pianos
+  for each row execute function public.enforce_rate_limit('piano_create', '5', '24 hours');
+
+drop trigger if exists piano_updates_rate_limit on public.piano_updates;
+create trigger piano_updates_rate_limit
+  before insert on public.piano_updates
+  for each row execute function public.enforce_rate_limit('piano_update', '30', '24 hours');
+
+drop trigger if exists piano_visits_rate_limit on public.piano_visits;
+create trigger piano_visits_rate_limit
+  before insert on public.piano_visits
+  for each row execute function public.enforce_rate_limit('piano_visit', '50', '24 hours');
+
+drop trigger if exists piano_sessions_rate_limit on public.piano_sessions;
+create trigger piano_sessions_rate_limit
+  before insert on public.piano_sessions
+  for each row execute function public.enforce_rate_limit('piano_session', '10', '24 hours');
+
+drop trigger if exists piano_reports_rate_limit on public.piano_reports;
+create trigger piano_reports_rate_limit
+  before insert on public.piano_reports
+  for each row execute function public.enforce_rate_limit('piano_report', '5', '24 hours');
+
+drop trigger if exists user_requests_rate_limit on public.user_requests;
+create trigger user_requests_rate_limit
+  before insert on public.user_requests
+  for each row execute function public.enforce_rate_limit('user_request', '5', '7 days');
+
+-- 11.c. Lockout protection sur set_user_role + re-auth password sur RPCs irréversibles
+--
+-- set_user_role : empêcher la rétrogradation du dernier superadmin (sinon le
+-- superadmin A peut rétrograder le superadmin B et lockout total si A perd
+-- ses creds).
+create or replace function public.set_user_role(target uuid, new_role user_role)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_remaining int;
+begin
+  if not public.is_superadmin() then
+    raise exception 'forbidden';
+  end if;
+  if target = auth.uid() then
+    raise exception 'cannot change own role';
+  end if;
+  if new_role <> 'superadmin' then
+    select count(*) into v_remaining
+    from public.profiles
+    where role = 'superadmin' and id <> target;
+    if v_remaining < 1 then
+      raise exception 'cannot demote last superadmin';
+    end if;
+  end if;
+  update public.profiles set role = new_role where id = target;
+end$$;
+
+-- Re-auth password : les RPCs irréversibles (ban, suppression piano,
+-- suppression compte) doivent re-vérifier le password avant action.
+-- Empêche un attaquant ayant volé une session courte de causer des
+-- dommages permanents sans reconfirmer.
+create or replace function public.set_user_banned(
+  target uuid, banned boolean, p_password text default null
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare target_role user_role;
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if p_password is null or not public.verify_my_password(p_password) then
+    raise exception 'invalid_password';
+  end if;
+  select role into target_role from public.profiles where id = target;
+  if target_role = 'superadmin' then
+    raise exception 'cannot ban superadmin';
+  end if;
+  update public.profiles
+  set banned_at = case when banned then now() else null end
+  where id = target;
+end$$;
+
+create or replace function public.force_delete_piano(
+  target uuid, p_password text default null
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if p_password is null or not public.verify_my_password(p_password) then
+    raise exception 'invalid_password';
+  end if;
+  update public.pianos set is_deleted = true where id = target;
+end$$;
+
+create or replace function public.delete_my_account(p_password text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  uid uuid := auth.uid();
+begin
+  if uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if p_password is null or not public.verify_my_password(p_password) then
+    raise exception 'invalid_password';
+  end if;
+  delete from auth.users where id = uid;
+end$$;
+
+-- Les signatures changent (nouveau paramètre p_password). Re-grant pour
+-- couvrir la nouvelle signature ; l'ancienne n'est plus appelée par le
+-- front. On peut conserver l'ancienne signature pour rétro-compat pendant
+-- une migration ; ici on remplace direct.
+revoke all on function public.set_user_banned(uuid, boolean) from public;
+revoke all on function public.set_user_banned(uuid, boolean, text) from public;
+revoke all on function public.force_delete_piano(uuid) from public;
+revoke all on function public.force_delete_piano(uuid, text) from public;
+revoke all on function public.delete_my_account() from public;
+revoke all on function public.delete_my_account(text) from public;
+grant execute on function public.set_user_banned(uuid, boolean, text) to authenticated;
+grant execute on function public.force_delete_piano(uuid, text) to authenticated;
+grant execute on function public.delete_my_account(text) to authenticated;
+
+-- 11.d. Création automatique du profile au signup (trigger auth.users)
+-- Avec email confirmation activée, auth.uid() est NULL tant que le user n'a
+-- pas cliqué sur le lien — la policy profiles_insert_self échouerait côté
+-- client. On déplace la création du profil dans un trigger AFTER INSERT
+-- sur auth.users (SECURITY DEFINER), qui lit le pseudo depuis
+-- raw_user_meta_data. Fallback : si pseudo manquant ou collision, on génère
+-- un suffixe — le user pourra rename via EditPseudoDialog.
+--
+-- Persiste aussi l'acceptation CGU (date + version) si elle est passée dans
+-- raw_user_meta_data (cf. A.6.2). Sinon laisse à null — l'user devra accepter
+-- au prochain login via /cgu-update.
+alter table public.profiles
+  add column if not exists accept_cgu_at      timestamptz,
+  add column if not exists accept_cgu_version text;
+
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_pseudo      text;
+  v_attempt     text;
+  v_i           int := 0;
+  v_cgu_version text;
+  v_cgu_at      timestamptz;
+begin
+  v_pseudo := coalesce(
+    nullif(new.raw_user_meta_data->>'pseudo', ''),
+    'user_' || substr(new.id::text, 1, 8)
+  );
+  v_attempt := v_pseudo;
+  while exists(select 1 from public.profiles where pseudo = v_attempt) loop
+    v_i := v_i + 1;
+    v_attempt := v_pseudo || '_' || v_i;
+    exit when v_i > 50;
+  end loop;
+
+  v_cgu_version := nullif(new.raw_user_meta_data->>'accept_cgu_version', '');
+  if v_cgu_version is not null then
+    v_cgu_at := now();
+  end if;
+
+  insert into public.profiles(id, pseudo, accept_cgu_at, accept_cgu_version)
+  values (new.id, v_attempt, v_cgu_at, v_cgu_version)
+  on conflict (id) do nothing;
+  return new;
+end$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+-- 11.e. RGPD — anonymisation des contributions historiques + export complet
+--
+-- Avant : piano_updates.updated_by ON DELETE CASCADE → quand un user supprime
+-- son compte, tout son historique de MAJ disparait → perte de valeur
+-- communautaire (les autres utilisateurs ne savent plus pourquoi un piano a
+-- été marqué disparu, etc.).
+--
+-- Après : ON DELETE SET NULL + snapshot pseudo dans une colonne dédiée
+-- author_pseudo_at_time. L'historique survit, attribué à un pseudo figé
+-- ("@enzo (compte supprimé)" affiché côté UI).
+alter table public.piano_updates
+  add column if not exists author_pseudo_at_time text;
+
+alter table public.piano_updates
+  drop constraint if exists piano_updates_updated_by_fkey,
+  add constraint piano_updates_updated_by_fkey
+    foreign key (updated_by) references public.profiles(id) on delete set null;
+
+create or replace function public.fill_pseudo_snapshot()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.author_pseudo_at_time is null and new.updated_by is not null then
+    select pseudo into new.author_pseudo_at_time
+    from public.profiles where id = new.updated_by;
+  end if;
+  return new;
+end$$;
+
+drop trigger if exists piano_updates_pseudo_snapshot on public.piano_updates;
+create trigger piano_updates_pseudo_snapshot
+  before insert on public.piano_updates
+  for each row execute function public.fill_pseudo_snapshot();
+
+-- Backfill : remplit la colonne pour les rows existantes (au moment où
+-- on déploie cette migration).
+update public.piano_updates u
+set author_pseudo_at_time = p.pseudo
+from public.profiles p
+where u.updated_by = p.id and u.author_pseudo_at_time is null;
+
+-- RPC export RGPD complet : renvoie un jsonb structuré avec TOUTES les
+-- données touchant le user courant. À ouvrir dans la requête front
+-- ExportDataButton pour faire un download JSON unique.
+create or replace function public.export_my_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid    uuid := auth.uid();
+  v_email  text;
+  v_result jsonb;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  select email into v_email from auth.users where id = v_uid;
+
+  v_result := jsonb_build_object(
+    'exported_at', now(),
+    'user', jsonb_build_object('id', v_uid, 'email', v_email),
+    'profile', (
+      select to_jsonb(p) from public.profiles p where p.id = v_uid
+    ),
+    'pianos', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.pianos t where t.created_by = v_uid
+    ), '[]'::jsonb),
+    'piano_updates', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_updates t where t.updated_by = v_uid
+    ), '[]'::jsonb),
+    'piano_reports', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_reports t where t.reported_by = v_uid
+    ), '[]'::jsonb),
+    'piano_visits', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_visits t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'piano_sessions', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_sessions t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'event_participants', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.event_participants t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'user_requests', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.user_requests t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'notification_preferences', (
+      select to_jsonb(t) from public.notification_preferences t where t.user_id = v_uid
+    ),
+    'push_subscriptions', coalesce((
+      -- Endpoints uniquement : pas de p256dh/auth_secret (clés sensibles)
+      select jsonb_agg(jsonb_build_object(
+        'endpoint', endpoint,
+        'user_agent', user_agent,
+        'created_at', created_at,
+        'last_used_at', last_used_at
+      )) from public.push_subscriptions t where t.user_id = v_uid
+    ), '[]'::jsonb)
+  );
+  return v_result;
+end$$;
+
+revoke all on function public.export_my_data() from public;
+grant execute on function public.export_my_data() to authenticated;
+
+-- 11.f. Audit log admin
+-- Trace toutes les actions admin sensibles : qui a banni qui, supprimé quoi,
+-- changé quel rôle, répondu à quelle demande. Indispensable pour la réponse
+-- à incident et pour le droit à l'information RGPD article 15.
+--
+-- La table est en INSERT-only via une fonction SECURITY DEFINER ; jamais
+-- d'UPDATE/DELETE possible côté client. SELECT est gated admin.
+
+create table if not exists public.audit_log (
+  id          bigserial primary key,
+  actor_id    uuid references public.profiles(id) on delete set null,
+  action      text not null,
+  target_id   uuid,
+  payload     jsonb not null default '{}'::jsonb,
+  created_at  timestamptz not null default now()
+);
+create index if not exists audit_log_created_idx
+  on public.audit_log(created_at desc);
+create index if not exists audit_log_actor_idx
+  on public.audit_log(actor_id, created_at desc);
+create index if not exists audit_log_action_idx
+  on public.audit_log(action, created_at desc);
+
+alter table public.audit_log enable row level security;
+
+drop policy if exists audit_log_select_admin on public.audit_log;
+create policy audit_log_select_admin on public.audit_log
+  for select using (public.is_admin());
+
+-- Pas de policy INSERT/UPDATE/DELETE — l'écriture passe exclusivement par la
+-- fonction security definer ci-dessous, appelée depuis les autres RPCs admin.
+
+create or replace function public.write_audit_log(
+  p_action text, p_target uuid, p_payload jsonb
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.audit_log(actor_id, action, target_id, payload)
+  values (auth.uid(), p_action, p_target, coalesce(p_payload, '{}'::jsonb));
+end$$;
+
+revoke all on function public.write_audit_log(text, uuid, jsonb) from public;
+-- Pas de grant à authenticated : appel uniquement depuis d'autres SECURITY
+-- DEFINER functions (set_user_role, set_user_banned, etc.) qui s'exécutent
+-- comme `postgres` et peuvent appeler write_audit_log librement.
+
+-- Wrapping des RPCs admin pour tracer chaque action sensible.
+-- On re-définit ici les RPCs déjà créées en section 11.c en ajoutant
+-- l'appel à write_audit_log à la fin.
+
+create or replace function public.set_user_role(target uuid, new_role user_role)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_remaining int;
+begin
+  if not public.is_superadmin() then
+    raise exception 'forbidden';
+  end if;
+  if target = auth.uid() then
+    raise exception 'cannot change own role';
+  end if;
+  if new_role <> 'superadmin' then
+    select count(*) into v_remaining
+    from public.profiles
+    where role = 'superadmin' and id <> target;
+    if v_remaining < 1 then
+      raise exception 'cannot demote last superadmin';
+    end if;
+  end if;
+  update public.profiles set role = new_role where id = target;
+  perform public.write_audit_log(
+    'set_user_role', target, jsonb_build_object('new_role', new_role)
+  );
+end$$;
+
+create or replace function public.set_user_banned(
+  target uuid, banned boolean, p_password text default null
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare target_role user_role;
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if p_password is null or not public.verify_my_password(p_password) then
+    raise exception 'invalid_password';
+  end if;
+  select role into target_role from public.profiles where id = target;
+  if target_role = 'superadmin' then
+    raise exception 'cannot ban superadmin';
+  end if;
+  update public.profiles
+  set banned_at = case when banned then now() else null end
+  where id = target;
+  perform public.write_audit_log(
+    'set_user_banned', target, jsonb_build_object('banned', banned)
+  );
+end$$;
+
+create or replace function public.resolve_report(report_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  update public.piano_reports set resolved = true where id = report_id;
+  perform public.write_audit_log('resolve_report', report_id, '{}'::jsonb);
+end$$;
+
+create or replace function public.force_delete_piano(
+  target uuid, p_password text default null
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if p_password is null or not public.verify_my_password(p_password) then
+    raise exception 'invalid_password';
+  end if;
+  update public.pianos set is_deleted = true where id = target;
+  perform public.write_audit_log('force_delete_piano', target, '{}'::jsonb);
+end$$;
+
+create or replace function public.reply_to_request(request_id uuid, reply text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_user_id uuid;
+  v_subject text;
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  if reply is null or char_length(reply) = 0 or char_length(reply) > 2000 then
+    raise exception 'invalid reply';
+  end if;
+
+  update public.user_requests
+  set admin_reply = reply,
+      replied_at = now(),
+      replied_by = auth.uid(),
+      status = 'answered'
+  where id = request_id
+  returning user_id, subject into v_user_id, v_subject;
+
+  if v_user_id is not null then
+    insert into public.notifications_outbox(recipient_id, kind, payload)
+    values (
+      v_user_id,
+      'request_reply',
+      jsonb_build_object(
+        'request_id', request_id,
+        'subject', v_subject,
+        'reply', reply
+      )
+    );
+  end if;
+
+  perform public.write_audit_log(
+    'reply_to_request', request_id,
+    jsonb_build_object('reply_len', char_length(reply))
+  );
+end$$;
+
+-- 11.g. Outbox notifications : retry avec backoff + dead-letter + purge
+--
+-- Avant : Edge Function échoue → row reste `sent_at = null` avec error
+-- rempli, jamais retry, table grossit indéfiniment.
+--
+-- Après : 3 colonnes ajoutées (status, attempts, next_retry_at). Un job
+-- pg_cron (à activer manuellement post-déploiement, voir section 13) ré-POST
+-- les rows pending toutes les 5 minutes. Après 5 attempts → status =
+-- 'permanent_failure'. Purge nightly des sent depuis > 30j.
+
+alter table public.notifications_outbox
+  add column if not exists status text not null default 'pending'
+    check (status in ('pending', 'sent', 'permanent_failure')),
+  add column if not exists attempts int not null default 0,
+  add column if not exists next_retry_at timestamptz;
+
+create index if not exists notifications_outbox_status_idx
+  on public.notifications_outbox(status, next_retry_at)
+  where status = 'pending';
+
+-- Backfill : rows déjà sent_at non null sont marquées 'sent', les autres
+-- restent 'pending' avec next_retry_at = now() pour traitement immédiat.
+update public.notifications_outbox
+set status = case
+      when sent_at is not null and error is null then 'sent'
+      when sent_at is not null and error is not null then 'permanent_failure'
+      else 'pending'
+    end,
+    attempts = case when sent_at is not null then 1 else 0 end,
+    next_retry_at = case when sent_at is null then now() else null end
+where status = 'pending'
+  and attempts = 0
+  and next_retry_at is null;
+
+create or replace function public.mark_notification_sent(notif_id uuid, err text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_attempts int;
+  v_max_attempts constant int := 5;
+  v_backoff_minutes int;
+begin
+  select attempts + 1 into v_attempts
+  from public.notifications_outbox
+  where id = notif_id;
+  if v_attempts is null then
+    return;
+  end if;
+
+  if err is null then
+    update public.notifications_outbox
+    set sent_at = now(),
+        error = null,
+        attempts = v_attempts,
+        status = 'sent',
+        next_retry_at = null
+    where id = notif_id;
+    return;
+  end if;
+
+  -- Backoff exponentiel : 2, 4, 8, 16, 32 minutes (cap à 5 tentatives).
+  v_backoff_minutes := power(2, v_attempts)::int;
+  if v_attempts >= v_max_attempts then
+    update public.notifications_outbox
+    set error = err,
+        attempts = v_attempts,
+        status = 'permanent_failure',
+        next_retry_at = null,
+        sent_at = now()
+    where id = notif_id;
+  else
+    update public.notifications_outbox
+    set error = err,
+        attempts = v_attempts,
+        status = 'pending',
+        next_retry_at = now() + make_interval(mins => v_backoff_minutes)
+    where id = notif_id;
+  end if;
+end$$;
+
+revoke all on function public.mark_notification_sent(uuid, text) from public;
+-- service_role only (Edge Function)
+
+-- Helper appelable par pg_cron pour lister les notifs prêtes à être retentées.
+-- Renvoie juste les IDs ; le job cron POSTera vers send-notification.
+create or replace function public.list_pending_notifications(lim int default 50)
+returns table(id uuid)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select id from public.notifications_outbox
+  where status = 'pending'
+    and attempts < 5
+    and (next_retry_at is null or next_retry_at <= now())
+  order by created_at asc
+  limit lim;
+$$;
+revoke all on function public.list_pending_notifications(int) from public;
+
+-- Purge des sent > 30j (à appeler depuis pg_cron, voir section 13).
+create or replace function public.purge_old_notifications()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  delete from public.notifications_outbox
+  where status in ('sent', 'permanent_failure')
+    and sent_at < now() - interval '30 days';
+$$;
+revoke all on function public.purge_old_notifications() from public;
+
+-- ============================
+-- 12. Bootstrap superadmin (idempotent — à ré-exécuter après le 1er signup)
 -- ============================
 update public.profiles
 set role = 'superadmin'
 where id = (select id from auth.users where email = 'enzo.reine35@gmail.com')
   and role <> 'superadmin';
+
+-- ============================
+-- 13. Setup post-déploiement (instructions, non-SQL)
+-- ============================
+-- (1) Activer la confirmation email Supabase
+--   Dashboard > Auth > Providers > Email > cocher "Confirm email"
+--   Dashboard > Auth > URL Configuration > Site URL = https://pianoworld.vercel.app
+--   Ajouter https://pianoworld.vercel.app/auth/login aux Redirect URLs.
+--
+-- (2) Webhook envoi des notifications
+--   Database > Webhooks > Create webhook
+--   - Name : send_notifications
+--   - Table : notifications_outbox
+--   - Events : INSERT
+--   - Type : Supabase Edge Functions
+--   - Function : send-notification
+--   - HTTP Headers : x-webhook-secret = <valeur identique à WEBHOOK_SECRET côté Edge>
+--
+-- (3) Edge Functions > Secrets (clé/valeur)
+--   - WEBHOOK_SECRET (openssl rand -base64 32)
+--   - RESEND_API_KEY (resend.com/api-keys)
+--   - VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY (npx web-push generate-vapid-keys)
+--   - VAPID_SUBJECT = mailto:enzo.reine35@gmail.com
+--   - MAIL_FROM = onboarding@resend.dev (test) ou no-reply@<domain>
+--   - APP_URL = https://pianoworld.vercel.app
+--
+-- (4) Déployer la fonction Edge
+--   supabase functions deploy send-notification
+--
+-- (5) Retry + purge des notifications via pg_cron (v5)
+--   Activer pg_cron dans Database > Extensions, puis :
+--     select cron.schedule('notif-retry', '*/5 * * * *', $$
+--       select net.http_post(
+--         url := '<URL EDGE FUNCTION>/send-notification',
+--         headers := jsonb_build_object(
+--           'x-webhook-secret', '<MEME VALEUR QU AU 3>',
+--           'content-type', 'application/json'
+--         ),
+--         body := jsonb_build_object('record', jsonb_build_object('id', id))
+--       )
+--       from public.list_pending_notifications(50);
+--     $$);
+--     select cron.schedule('notif-purge', '17 3 * * *', $$
+--       select public.purge_old_notifications();
+--     $$);

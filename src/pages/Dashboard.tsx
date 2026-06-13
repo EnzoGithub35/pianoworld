@@ -1,12 +1,8 @@
 import { useMemo, useState } from 'react'
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger
-} from '@/components/ui/Tabs'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { ActivityTab } from '@/components/Dashboard/ActivityTab'
+import { CommunityTab } from '@/components/Community/CommunityTab'
 import { EventsTab } from '@/components/Events/EventsTab'
 import { MyRequestsTab } from '@/components/Requests/MyRequestsTab'
 import { useMyRequests } from '@/hooks/useUserRequests'
@@ -21,8 +17,10 @@ import { REQUESTS_LAST_SEEN_KEY } from '@/lib/constants'
  * Badge "nouvelle réponse" sur Mes demandes : on compare le replied_at le plus
  * récent vs le dernier vu (localStorage). MyRequestsTab marque comme vu au mount.
  */
+type DashboardTab = 'activity' | 'community' | 'events' | 'requests'
+
 export function Dashboard() {
-  const [tab, setTab] = useState<'activity' | 'events' | 'requests'>('activity')
+  const [tab, setTab] = useState<DashboardTab>('activity')
   const { data: myRequests } = useMyRequests()
 
   const newReplyCount = useMemo(() => {
@@ -44,11 +42,12 @@ export function Dashboard() {
 
       <Tabs
         value={tab}
-        onValueChange={(v) => setTab(v as 'activity' | 'events' | 'requests')}
+        onValueChange={(v) => setTab(v as DashboardTab)}
         className="flex flex-1 flex-col overflow-hidden"
       >
         <TabsList scrollable className="bg-background px-2">
           <TabsTrigger value="activity">Activité</TabsTrigger>
+          <TabsTrigger value="community">Communauté</TabsTrigger>
           <TabsTrigger value="events">Évènements</TabsTrigger>
           <TabsTrigger value="requests">
             <span className="flex items-center gap-1.5">
@@ -61,6 +60,9 @@ export function Dashboard() {
         <div className="flex-1 overflow-y-auto">
           <TabsContent value="activity">
             <ActivityTab />
+          </TabsContent>
+          <TabsContent value="community">
+            <CommunityTab />
           </TabsContent>
           <TabsContent value="events">
             <EventsTab />

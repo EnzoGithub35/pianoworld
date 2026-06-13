@@ -3,7 +3,7 @@ import toast from 'react-hot-toast'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { isUniqueViolation } from '@/lib/errors'
+import { CGU_VERSION } from '@/lib/constants'
 import type { Profile } from '@/types/database'
 
 /**
@@ -15,6 +15,9 @@ import type { Profile } from '@/types/database'
  * pour Sentry, mais ne mange jamais l'exception.
  */
 
+/** Résultat de `signUp` : indique si l'utilisateur doit confirmer son email. */
+export type SignUpResult = { needsConfirmation: boolean; email: string }
+
 interface AuthContextValue {
   user: User | null
   session: Session | null
@@ -25,25 +28,27 @@ interface AuthContextValue {
   /** True si le profil a explicitement le rôle 'superadmin'. */
   isSuperadmin: boolean
   signIn: (email: string, password: string) => Promise<void>
-  signUp: (email: string, password: string, pseudo: string) => Promise<void>
+  signUp: (email: string, password: string, pseudo: string) => Promise<SignUpResult>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
+  /** Renvoie l'email de confirmation pour un compte non encore confirmé. */
+  resendConfirmation: (email: string) => Promise<void>
   refreshProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
 async function fetchProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle()
+  // Les colonnes sensibles (role, banned_at) de public.profiles ne sont plus
+  // accessibles via SELECT direct (column-level revoke). On passe par la RPC
+  // SECURITY DEFINER `get_my_profile` qui retourne la ligne complète du user
+  // courant en bypassant les grants colonne par colonne.
+  const { data, error } = await supabase.rpc('get_my_profile')
   if (error) {
-    logger.error('auth.fetchProfile', 'profile select failed', error, { userId })
+    logger.error('auth.fetchProfile', 'rpc get_my_profile failed', error, { userId })
     return null
   }
-  return data
+  return (data as Profile | null) ?? null
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -123,7 +128,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     logger.info('auth.signIn', 'success')
   }
 
-  const signUp = async (email: string, password: string, pseudo: string) => {
+  const signUp = async (
+    email: string,
+    password: string,
+    pseudo: string
+  ): Promise<SignUpResult> => {
+    // Pseudo dup check best-effort (race possible : le trigger DB ajoute un
+    // suffixe en fallback, donc on est protégé même en cas de course).
     const { data: existing, error: lookupError } = await supabase
       .from('profiles')
       .select('id')
@@ -135,10 +146,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     if (existing) throw new Error('Ce pseudo est déjà pris')
 
+    const redirectTo = `${window.location.origin}/auth/login`
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
-      options: { data: { pseudo } }
+      options: {
+        data: { pseudo, accept_cgu_version: CGU_VERSION },
+        emailRedirectTo: redirectTo
+      }
     })
     if (error) {
       logger.warn('auth.signUp', 'signup failed', { message: error.message })
@@ -148,20 +163,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logger.error('auth.signUp', 'no user returned', new Error('no-user'))
       throw new Error('Inscription échouée')
     }
+    // Le profil est créé par le trigger SQL on_auth_user_created. Plus
+    // d'INSERT manuel ici — avec email confirmation activée, auth.uid()
+    // serait null et la policy profiles_insert_self refuserait.
+    const needsConfirmation = !data.session
+    logger.info('auth.signUp', 'success', {
+      userId: data.user.id,
+      needsConfirmation
+    })
+    return { needsConfirmation, email }
+  }
 
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .insert({ id: data.user.id, pseudo })
-    if (profileError) {
-      if (isUniqueViolation(profileError)) {
-        throw new Error('Ce pseudo est déjà pris')
-      }
-      logger.error('auth.signUp', 'profile insert failed', profileError, {
-        userId: data.user.id
-      })
-      throw new Error('Compte créé mais profil non enregistré, contacte le support.')
+  const resendConfirmation = async (email: string) => {
+    const redirectTo = `${window.location.origin}/auth/login`
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: redirectTo }
+    })
+    if (error) {
+      logger.warn('auth.resendConfirmation', 'failed', { message: error.message })
+      throw error
     }
-    logger.info('auth.signUp', 'success', { userId: data.user.id })
+    logger.info('auth.resendConfirmation', 'sent')
   }
 
   const signOut = async () => {
@@ -218,6 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signUp,
         signOut,
         resetPassword,
+        resendConfirmation,
         refreshProfile
       }}
     >

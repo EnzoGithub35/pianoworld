@@ -28,7 +28,10 @@ export function isPostgrestError(err: unknown): err is PostgrestLikeError {
  * Extrait un message lisible pour l'utilisateur final, quel que soit le format
  * de l'erreur. Toujours retourne une string non vide.
  */
-export function getErrorMessage(err: unknown, fallback = 'Une erreur est survenue'): string {
+export function getErrorMessage(
+  err: unknown,
+  fallback = 'Une erreur est survenue'
+): string {
   if (err instanceof Error && err.message) return err.message
   if (typeof err === 'string' && err) return err
   if (typeof err === 'object' && err !== null) {
@@ -49,4 +52,24 @@ export function isUniqueViolation(err: unknown): boolean {
 export function isPermissionDenied(err: unknown): boolean {
   if (!isPostgrestError(err)) return false
   return err.code === '42501' || err.code === 'PGRST301'
+}
+
+/**
+ * Limite de débit dépassée (raise exception 'rate_limit_exceeded' côté trigger
+ * enforce_rate_limit, errcode P0001). Le `hint` Postgres porte le nom de
+ * l'action (`piano_create`, `piano_update`, etc.) — exposé ici pour formatter
+ * un toast contextualisé côté forms.
+ */
+export function isRateLimitError(err: unknown): boolean {
+  if (!isPostgrestError(err)) return false
+  return (
+    err.code === 'P0001' &&
+    (err.message ?? '').toLowerCase().includes('rate_limit_exceeded')
+  )
+}
+
+/** Mot de passe incorrect renvoyé par RPCs irréversibles (raise 'invalid_password'). */
+export function isInvalidPassword(err: unknown): boolean {
+  if (!isPostgrestError(err)) return false
+  return (err.message ?? '').toLowerCase().includes('invalid_password')
 }

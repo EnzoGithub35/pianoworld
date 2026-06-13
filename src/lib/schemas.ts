@@ -49,7 +49,10 @@ export type LoginValues = z.infer<typeof loginSchema>
 export const signupSchema = z.object({
   pseudo: pseudoSchema,
   email: emailSchema,
-  password: passwordSchema
+  password: passwordSchema,
+  acceptCgu: z.literal(true, {
+    errorMap: () => ({ message: 'Tu dois accepter les CGU pour continuer' })
+  })
 })
 export type SignupValues = z.infer<typeof signupSchema>
 
@@ -69,7 +72,12 @@ export const resetPasswordSchema = z
   })
 export type ResetPasswordValues = z.infer<typeof resetPasswordSchema>
 
-const qualitySchema = z.enum(PIANO_QUALITIES as [(typeof PIANO_QUALITIES)[number], ...Array<(typeof PIANO_QUALITIES)[number]>])
+const qualitySchema = z.enum(
+  PIANO_QUALITIES as [
+    (typeof PIANO_QUALITIES)[number],
+    ...Array<(typeof PIANO_QUALITIES)[number]>
+  ]
+)
 
 /** Schema commun ajout & édition piano. */
 export const pianoFormSchema = z.object({
@@ -134,7 +142,10 @@ export const eventFormSchema = z
       .string()
       .trim()
       .min(1, 'Description requise')
-      .max(EVENT_DESCRIPTION_MAX, `Description : ${EVENT_DESCRIPTION_MAX} caractères max`),
+      .max(
+        EVENT_DESCRIPTION_MAX,
+        `Description : ${EVENT_DESCRIPTION_MAX} caractères max`
+      ),
     location: z
       .string()
       .trim()
@@ -146,17 +157,12 @@ export const eventFormSchema = z
         message: "L'horaire est dans le passé"
       }),
     ends_at: z.date().nullable().optional(),
-    max_participants: z
-      .number()
-      .int()
-      .positive('Doit être positif')
-      .nullable()
-      .optional()
+    max_participants: z.number().int().positive('Doit être positif').nullable().optional()
   })
-  .refine(
-    (v) => !v.ends_at || v.ends_at.getTime() > v.starts_at.getTime(),
-    { path: ['ends_at'], message: 'Doit être après le début' }
-  )
+  .refine((v) => !v.ends_at || v.ends_at.getTime() > v.starts_at.getTime(), {
+    path: ['ends_at'],
+    message: 'Doit être après le début'
+  })
 export type EventFormValues = z.infer<typeof eventFormSchema>
 
 export const requestFormSchema = z.object({
@@ -181,6 +187,37 @@ export const replyFormSchema = z.object({
     .max(REQUEST_MESSAGE_MAX, `Réponse : ${REQUEST_MESSAGE_MAX} caractères max`)
 })
 export type ReplyFormValues = z.infer<typeof replyFormSchema>
+
+/* ===========================================================
+ * v4 — Changement de mot de passe (utilisateur connecté)
+ * =========================================================== */
+
+export const changePasswordSchema = z
+  .object({
+    current: z.string().min(1, 'Mot de passe actuel requis'),
+    next: passwordSchema,
+    confirm: z.string()
+  })
+  .refine((d) => d.next === d.confirm, {
+    path: ['confirm'],
+    message: 'Les mots de passe ne correspondent pas'
+  })
+  .refine((d) => d.next !== d.current, {
+    path: ['next'],
+    message: 'Le nouveau mot de passe doit être différent'
+  })
+export type ChangePasswordValues = z.infer<typeof changePasswordSchema>
+
+/**
+ * Confirmation de mot de passe pour les actions irréversibles (ban, suppression
+ * piano forcée, suppression de compte). Le serveur revalide via
+ * `verify_my_password()` côté RPC — le schéma front sert juste à exiger un input
+ * non vide.
+ */
+export const passwordConfirmSchema = z.object({
+  password: z.string().min(1, 'Mot de passe requis pour confirmer')
+})
+export type PasswordConfirmValues = z.infer<typeof passwordConfirmSchema>
 
 export const sessionFormSchema = z.object({
   starts_at: z
