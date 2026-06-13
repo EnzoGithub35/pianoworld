@@ -8,8 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,md,json}\"",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css,md,json}\" \"*.{md,json}\" \".github/**/*.{yml,yaml,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css,md,json}\" \"*.{md,json}\" \".github/**/*.{yml,yaml,md}\"",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -23,6 +23,12 @@
       "prettier --write"
     ],
     "src/**/*.{css,md,json}": [
+      "prettier --write"
+    ],
+    "*.{md,json}": [
+      "prettier --write"
+    ],
+    ".github/**/*.{yml,yaml,md}": [
       "prettier --write"
     ]
   },
