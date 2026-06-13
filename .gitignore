@@ -30,3 +30,4 @@ supabase/.temp
 
 # PWA generated
 dev-dist
+coverage/
