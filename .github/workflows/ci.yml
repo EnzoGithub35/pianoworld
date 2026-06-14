@@ -18,6 +18,13 @@ jobs:
     name: Typecheck + lint + tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Placeholders pour que `import { supabase }` au chargement des modules
+      # (notamment web-push.ts importé par son test) ne throw pas. Pas de
+      # runtime DB en test : ces clés ne sont jamais utilisées pour de vraies
+      # requêtes. Cf. src/lib/supabase.ts qui throw si ces vars manquent.
+      VITE_SUPABASE_URL: https://example.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-anon-key-placeholder
     steps:
       - uses: actions/checkout@v4
 
