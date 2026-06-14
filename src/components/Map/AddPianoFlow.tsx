@@ -27,9 +27,12 @@ import {
 } from '@/lib/constants'
 import { PIANO_QUALITIES, QUALITY_LABELS, type PianoQuality } from '@/types/database'
 
+// Pas de transform CSS sur le wrapper : Leaflet positionne déjà le DIV racine
+// selon `iconAnchor`. Le translate(-50%, -100%) précédent doublait le décalage
+// → le marker apparaissait visuellement bien au-dessus du point cliqué.
 const draggableIcon = L.divIcon({
   className: 'drag-pin',
-  html: `<div class="flex h-10 w-10 -translate-x-1/2 -translate-y-full items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-primary/30">
+  html: `<div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-primary/30">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Z"/></svg>
   </div>`,
   iconSize: [40, 40],
@@ -88,7 +91,8 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
     if (!coords || !pianos) return null
     return (
       pianos.find(
-        (p) => haversineMeters(coords, { lat: p.lat, lng: p.lng }) < DUPLICATE_DISTANCE_METERS
+        (p) =>
+          haversineMeters(coords, { lat: p.lat, lng: p.lng }) < DUPLICATE_DISTANCE_METERS
       ) ?? null
     )
   }, [coords, pianos])
@@ -165,7 +169,7 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[1000] flex flex-col bg-background animate-slide-up-modal">
+    <div className="animate-slide-up-modal fixed inset-0 z-[1000] flex flex-col bg-background">
       <header className="flex items-center justify-between border-b border-border p-4">
         <h2 className="text-lg font-semibold">Ajouter un piano</h2>
         <button
@@ -189,7 +193,7 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
           >
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution='&copy; OSM'
+              attribution="&copy; OSM"
               maxZoom={19}
             />
             <MapClickHandler onPick={(lat, lng) => setCoords({ lat, lng })} />
@@ -225,7 +229,8 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
         <div className="space-y-4 p-4">
           {!coords && (
             <div className="flex items-center gap-2 rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">
-              <MapPin className="h-4 w-4" /> Clique sur la carte ou utilise « Ma position ».
+              <MapPin className="h-4 w-4" /> Clique sur la carte ou utilise « Ma position
+              ».
             </div>
           )}
 
@@ -233,8 +238,11 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
             <div className="flex items-start gap-2 rounded-md border border-orange-300 bg-orange-50 p-3 text-xs text-orange-900 dark:border-orange-700 dark:bg-orange-950 dark:text-orange-200">
               <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
               <div>
-                <strong>Un piano existe déjà à moins de {DUPLICATE_DISTANCE_METERS}m :</strong>{' '}
-                {nearbyDuplicate.address}. Tu peux quand même l'ajouter si c'est un piano distinct.
+                <strong>
+                  Un piano existe déjà à moins de {DUPLICATE_DISTANCE_METERS}m :
+                </strong>{' '}
+                {nearbyDuplicate.address}. Tu peux quand même l'ajouter si c'est un piano
+                distinct.
               </div>
             </div>
           )}
@@ -245,7 +253,9 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
               id="address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder={resolvingAddress ? 'Résolution…' : 'Place ou clique sur la carte'}
+              placeholder={
+                resolvingAddress ? 'Résolution…' : 'Place ou clique sur la carte'
+              }
             />
           </div>
 
@@ -340,7 +350,11 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
           seront perdues.
         </p>
         <div className="flex gap-2">
-          <Button variant="outline" className="flex-1" onClick={() => setConfirmClose(false)}>
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => setConfirmClose(false)}
+          >
             Continuer
           </Button>
           <Button

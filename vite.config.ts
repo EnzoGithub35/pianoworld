@@ -38,11 +38,21 @@ export default defineConfig({
         ]
       },
       workbox: {
+        // Force le SW à reprendre le contrôle dès le nouveau déploiement.
+        // Évite que des tuiles cachées en erreur soient servies indéfiniment
+        // après un déploiement (cas vu en preview Vercel : fond gris).
+        clientsClaim: true,
+        skipWaiting: true,
+        cleanupOutdatedCaches: true,
         globPatterns: ['**/*.{js,css,html,svg,png,ico,webp}'],
         runtimeCaching: [
           {
+            // OSM tiles (legacy, conservé au cas où). StaleWhileRevalidate :
+            // retourne cache immédiatement mais refetch en parallèle pour
+            // que la prochaine vue soit fraîche. Élimine le bug "cache
+            // d'erreur servi indéfiniment" de CacheFirst.
             urlPattern: /^https:\/\/[a-c]\.tile\.openstreetmap\.org\/.*/i,
-            handler: 'CacheFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'osm-tiles-cache',
               expiration: {
@@ -52,12 +62,14 @@ export default defineConfig({
             }
           },
           {
+            // CartoDB tiles (light Voyager + dark). Couvre les sous-domaines
+            // a/b/c/d utilisés par Leaflet pour ce provider.
             urlPattern: /^https:\/\/[a-d]\.basemaps\.cartocdn\.com\/.*/i,
-            handler: 'CacheFirst',
+            handler: 'StaleWhileRevalidate',
             options: {
               cacheName: 'carto-tiles-cache',
               expiration: {
-                maxEntries: 200,
+                maxEntries: 300,
                 maxAgeSeconds: 60 * 60 * 24 * 30
               }
             }
