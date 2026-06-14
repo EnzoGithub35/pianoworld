@@ -191,9 +191,12 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
             className="h-full w-full"
             key={`${center[0]}-${center[1]}`}
           >
+            {/* Tuiles CartoDB Voyager pour cohérence avec PianoMap.tsx
+               et éviter le bug de fond gris en preview Vercel (cf. commit
+               fix(map) — voyager est plus robuste qu'OSM direct). */}
             <TileLayer
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              attribution="&copy; OSM"
+              url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
+              attribution="&copy; OSM &copy; CARTO"
               maxZoom={19}
             />
             <MapClickHandler onPick={(lat, lng) => setCoords({ lat, lng })} />
