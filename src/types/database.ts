@@ -88,6 +88,9 @@ export type NotificationPreferences = {
   notify_request_reply: boolean
   notify_events: boolean
   notify_piano_updates: boolean
+  notify_friend_arriving: boolean
+  notify_friend_request_received: boolean
+  notify_friend_request_accepted: boolean
   push_enabled: boolean
   updated_at: string
 }
@@ -98,6 +101,9 @@ export type NotificationKind =
   | 'session_conflict'
   | 'request_reply'
   | 'event_created'
+  | 'friend_arriving'
+  | 'friend_request_received'
+  | 'friend_request_accepted'
 
 export type PushSubscription = {
   id: string
@@ -161,6 +167,8 @@ export type PianoVisit = {
   visited_at: string
 }
 
+export type PianoSessionVisibility = 'public' | 'friends'
+
 export type PianoSession = {
   id: string
   piano_id: string
@@ -169,6 +177,61 @@ export type PianoSession = {
   duration_min: number
   created_at: string
   cancelled_at: string | null
+  /** v6 — qui voit cette session et reçoit la notif friend_arriving. Set-once à l'insert. */
+  visibility: PianoSessionVisibility
+}
+
+// v6 — système d'amitié bidirectionnel
+export type FriendshipStatus = 'pending' | 'accepted'
+
+export type Friendship = {
+  id: string
+  user_a: string
+  user_b: string
+  requester_id: string
+  status: FriendshipStatus
+  created_at: string
+  responded_at: string | null
+}
+
+/** Statut bilatéral retourné par la RPC get_friend_status. */
+export type FriendStatus =
+  | 'self'
+  | 'none'
+  | 'pending_sent'
+  | 'pending_received'
+  | 'friends'
+
+/** Profil ami retourné par get_my_friends. */
+export type FriendProfile = {
+  id: string
+  pseudo: string
+  created_at: string
+  friendship_since: string | null
+}
+
+/** Demande d'amitié pending retournée par get_my_friend_requests. */
+export type FriendRequest = {
+  request_id: string
+  user_id: string
+  pseudo: string
+  created_at: string
+}
+
+/** Entrée de présence retournée par list_piano_presence. */
+export type PresenceEntry = {
+  session_id: string
+  user_id: string
+  pseudo: string
+  starts_at: string
+  duration_min: number
+  visibility: PianoSessionVisibility
+}
+
+/** Ligne agrégée retournée par get_active_piano_counts (batch carte). */
+export type PianoPresenceCount = {
+  piano_id: string
+  count: number
 }
 
 export type Database = {
@@ -271,10 +334,20 @@ export type Database = {
           duration_min: number
           created_at?: string
           cancelled_at?: string | null
+          /** v6 — défaut 'public' côté DB. Set-once : pas modifiable post-INSERT. */
+          visibility?: PianoSessionVisibility
         }
         Update: {
           cancelled_at?: string | null
         }
+        Relationships: []
+      }
+      friendships: {
+        Row: Friendship
+        // friendships : REVOKE ALL côté client. Pas d'INSERT/UPDATE/DELETE direct
+        // possible — accès exclusif via les RPCs send/accept/reject/cancel/remove.
+        Insert: Record<string, never>
+        Update: Record<string, never>
         Relationships: []
       }
       events: {
@@ -337,6 +410,9 @@ export type Database = {
           notify_request_reply?: boolean
           notify_events?: boolean
           notify_piano_updates?: boolean
+          notify_friend_arriving?: boolean
+          notify_friend_request_received?: boolean
+          notify_friend_request_accepted?: boolean
           push_enabled?: boolean
           updated_at?: string
         }
@@ -346,6 +422,9 @@ export type Database = {
           notify_request_reply?: boolean
           notify_events?: boolean
           notify_piano_updates?: boolean
+          notify_friend_arriving?: boolean
+          notify_friend_request_received?: boolean
+          notify_friend_request_accepted?: boolean
           push_enabled?: boolean
           updated_at?: string
         }
@@ -450,6 +529,51 @@ export type Database = {
       export_my_data: {
         Args: Record<string, never>
         Returns: unknown
+      }
+      // v6 — système d'amitié
+      send_friend_request: {
+        Args: { target: string }
+        Returns: string
+      }
+      accept_friend_request: {
+        Args: { request_id: string }
+        Returns: undefined
+      }
+      reject_friend_request: {
+        Args: { request_id: string }
+        Returns: undefined
+      }
+      cancel_friend_request: {
+        Args: { request_id: string }
+        Returns: undefined
+      }
+      remove_friendship: {
+        Args: { other_user: string }
+        Returns: undefined
+      }
+      get_my_friends: {
+        Args: Record<string, never>
+        Returns: FriendProfile[]
+      }
+      get_my_friend_requests: {
+        Args: { direction?: 'received' | 'sent' }
+        Returns: FriendRequest[]
+      }
+      get_friend_status: {
+        Args: { target: string }
+        Returns: FriendStatus
+      }
+      get_active_piano_counts: {
+        Args: { piano_ids: string[] }
+        Returns: PianoPresenceCount[]
+      }
+      list_piano_presence: {
+        Args: { p_piano: string }
+        Returns: PresenceEntry[]
+      }
+      are_friends: {
+        Args: { a: string; b: string }
+        Returns: boolean
       }
     }
     Enums: {

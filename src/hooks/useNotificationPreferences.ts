@@ -18,6 +18,9 @@ const DEFAULTS: Omit<NotificationPreferences, 'user_id' | 'updated_at'> = {
   notify_request_reply: true,
   notify_events: true,
   notify_piano_updates: true,
+  notify_friend_arriving: true,
+  notify_friend_request_received: true,
+  notify_friend_request_accepted: true,
   push_enabled: false
 }
 
