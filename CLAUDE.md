@@ -449,6 +449,14 @@ Conflit ESLint 9 vs typescript-eslint peer ranges. Sans flag, `npm install` éch
 
 Ne fonctionnent qu'avec PWA installée ("Ajouter à l'écran d'accueil"), pas en onglet Safari classique. Sur Android/desktop ça marche en onglet.
 
+### Service Worker PWA stale après changement majeur
+
+Si tu changes le manifest, des URLs de tuiles ou des stratégies de cache dans `vite.config.ts`, le SW déjà installé chez l'utilisateur peut continuer à servir des assets obsolètes (carte grise, manifeste pas à jour, etc.). Le `registerType: 'autoUpdate'` aide mais n'est pas instantané — le client doit fermer/rouvrir l'onglet.
+
+**Pour test propre en preview** : ouvrir en navigation privée OU `DevTools → Application → Service Workers → Unregister` puis `Cmd/Ctrl+Shift+R`. La PWA précédente est tuée, la nouvelle prend le relais.
+
+**Pour les utilisateurs déjà installés** : depuis v5.1, `clientsClaim: true` + `skipWaiting: true` + `cleanupOutdatedCaches: true` forcent le SW à prendre le contrôle au prochain page-load, et les caches stratégies sont en `StaleWhileRevalidate` plutôt que `CacheFirst` — un mauvais cache se répare au prochain refetch.
+
 ---
 
 ## Anti-patterns à éviter

@@ -40,8 +40,11 @@ export function createPianoIcon({
     ? `<img src="${escapeAttr(photoUrl)}" alt="piano" class="h-full w-full object-cover" loading="lazy" />`
     : `<div class="flex h-full w-full items-center justify-center" style="color:${color}">${PIANO_KEYS_SVG}</div>`
   const pulse = active ? '<div class="pulse-ring"></div>' : ''
+  // Pas de transform CSS sur le wrapper : Leaflet positionne le DIV racine
+  // selon iconAnchor (cf. L.divIcon ci-dessous). Doubler avec un translate
+  // décalait visuellement le marker vers le haut, hors du point latlng réel.
   const html = `
-    <div class="relative -translate-x-1/2 -translate-y-full">
+    <div class="relative">
       ${pulse}
       <div class="h-10 w-10 overflow-hidden rounded-lg border-2 bg-white shadow-lg" style="border-color:${color}">
         ${inner}
