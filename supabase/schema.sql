@@ -1795,76 +1795,8 @@ revoke all on function public.purge_old_notifications() from public;
 -- avant utilisation dans les triggers. Le SQL Editor Supabase exécute chaque
 -- statement dans sa propre transaction, donc OK par défaut.
 
--- 14.a Helpers SECURITY DEFINER
--- ---------------------------------------------------------------------
-
--- are_friends(a, b) : guard anti-graph-probing + short-circuit null.
--- Le caller doit être l'un des 2 endpoints (ou admin). Empêche un attaquant
--- de probe la friendship graph entière via appels en boucle sur des UUID
--- d'autres utilisateurs.
-create or replace function public.are_friends(a uuid, b uuid)
-returns boolean
-language plpgsql
-security definer
-stable
-set search_path = public
-as $$
-begin
-  if a is null or b is null or a = b then return false; end if;
-  if auth.uid() not in (a, b) and not public.is_admin() then
-    raise exception 'forbidden' using errcode = '42501';
-  end if;
-  return exists(
-    select 1 from public.friendships
-    where status = 'accepted'
-      and user_a = least(a, b)
-      and user_b = greatest(a, b)
-  );
-end$$;
-revoke all on function public.are_friends(uuid, uuid) from public, anon;
-grant execute on function public.are_friends(uuid, uuid) to authenticated;
-
--- are_friends_safe(a, b) : variant SANS guard auth.uid(), réservé service_role.
--- Utilisé par l'Edge Function send-notification pour re-vérifier l'amitié
--- à delivery time du kind 'friend_arriving' (anti-leak si amitié supprimée
--- entre l'enqueue du trigger et l'envoi du mail/push).
-create or replace function public.are_friends_safe(a uuid, b uuid)
-returns boolean
-language sql
-security definer
-stable
-set search_path = public
-as $$
-  select case
-    when a is null or b is null or a = b then false
-    else exists(
-      select 1 from public.friendships
-      where status = 'accepted'
-        and user_a = least(a, b)
-        and user_b = greatest(a, b)
-    )
-  end;
-$$;
-revoke all on function public.are_friends_safe(uuid, uuid) from public, anon, authenticated;
-grant execute on function public.are_friends_safe(uuid, uuid) to service_role;
-
--- reject_visibility_update : trigger BEFORE UPDATE qui interdit toute
--- modification de piano_sessions.visibility après l'INSERT (set-once).
--- Empêche un race avec le trigger queue_friend_arriving_notification :
--- sans ça, un user pourrait créer en public puis flip en friends après
--- les notifs envoyées (ou inversement).
-create or replace function public.reject_visibility_update()
-returns trigger
-language plpgsql
-as $$
-begin
-  if new.visibility is distinct from old.visibility then
-    raise exception 'visibility is set-once' using errcode = '42501';
-  end if;
-  return new;
-end$$;
-
--- 14.b Tables
+-- 14.a Tables (déclarées avant les helpers : are_friends_safe est language sql,
+-- donc PostgreSQL résout les références à la création, pas en late binding).
 -- ---------------------------------------------------------------------
 
 -- friendships : modèle 1-row canonique (user_a < user_b). Aucun grant côté
@@ -1935,6 +1867,75 @@ create table if not exists public.friend_arriving_dedup (
 alter table public.friend_arriving_dedup enable row level security;
 revoke all on public.friend_arriving_dedup from anon, authenticated;
 -- Purge pg_cron hebdomadaire (cf. section 13).
+
+-- 14.b Helpers SECURITY DEFINER
+-- ---------------------------------------------------------------------
+
+-- are_friends(a, b) : guard anti-graph-probing + short-circuit null.
+-- Le caller doit être l'un des 2 endpoints (ou admin). Empêche un attaquant
+-- de probe la friendship graph entière via appels en boucle sur des UUID
+-- d'autres utilisateurs.
+create or replace function public.are_friends(a uuid, b uuid)
+returns boolean
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+begin
+  if a is null or b is null or a = b then return false; end if;
+  if auth.uid() not in (a, b) and not public.is_admin() then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  return exists(
+    select 1 from public.friendships
+    where status = 'accepted'
+      and user_a = least(a, b)
+      and user_b = greatest(a, b)
+  );
+end$$;
+revoke all on function public.are_friends(uuid, uuid) from public, anon;
+grant execute on function public.are_friends(uuid, uuid) to authenticated;
+
+-- are_friends_safe(a, b) : variant SANS guard auth.uid(), réservé service_role.
+-- Utilisé par l'Edge Function send-notification pour re-vérifier l'amitié
+-- à delivery time du kind 'friend_arriving' (anti-leak si amitié supprimée
+-- entre l'enqueue du trigger et l'envoi du mail/push).
+create or replace function public.are_friends_safe(a uuid, b uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select case
+    when a is null or b is null or a = b then false
+    else exists(
+      select 1 from public.friendships
+      where status = 'accepted'
+        and user_a = least(a, b)
+        and user_b = greatest(a, b)
+    )
+  end;
+$$;
+revoke all on function public.are_friends_safe(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.are_friends_safe(uuid, uuid) to service_role;
+
+-- reject_visibility_update : trigger BEFORE UPDATE qui interdit toute
+-- modification de piano_sessions.visibility après l'INSERT (set-once).
+-- Empêche un race avec le trigger queue_friend_arriving_notification :
+-- sans ça, un user pourrait créer en public puis flip en friends après
+-- les notifs envoyées (ou inversement).
+create or replace function public.reject_visibility_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.visibility is distinct from old.visibility then
+    raise exception 'visibility is set-once' using errcode = '42501';
+  end if;
+  return new;
+end$$;
 
 -- 14.c ALTER piano_sessions : visibility + index + trigger immutable + RLS
 -- ---------------------------------------------------------------------
