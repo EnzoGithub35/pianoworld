@@ -13,7 +13,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useGeolocation } from '@/hooks/useGeolocation'
 import { usePianos } from '@/hooks/usePianos'
 import { reverseGeocode } from '@/lib/geocoding'
-import { uploadPianoPhoto, validatePhotoFile } from '@/lib/photo'
+import { uploadPianoPhoto, deletePianoPhoto, validatePhotoFile } from '@/lib/photo'
 import { haversineMeters } from '@/lib/distance'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
@@ -27,16 +27,17 @@ import {
 } from '@/lib/constants'
 import { PIANO_QUALITIES, QUALITY_LABELS, type PianoQuality } from '@/types/database'
 
-// Pas de transform CSS sur le wrapper : Leaflet positionne déjà le DIV racine
-// selon `iconAnchor`. Le translate(-50%, -100%) précédent doublait le décalage
-// → le marker apparaissait visuellement bien au-dessus du point cliqué.
+// Le visuel est un cercle 40x40 (rounded-full) avec un ring extérieur — pas un
+// pin pointu en bas. Pour un cercle, l'anchor doit être au CENTRE [20, 20]
+// pour que le centre visuel coïncide avec le latlng cliqué. Avec [20, 20] :
+// (le précédent [20, 40] = bottom-center plaçait le cercle 20px au-dessus du clic).
 const draggableIcon = L.divIcon({
   className: 'drag-pin',
   html: `<div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg ring-4 ring-primary/30">
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="h-5 w-5"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7Z"/></svg>
   </div>`,
   iconSize: [40, 40],
-  iconAnchor: [20, 40]
+  iconAnchor: [20, 20]
 })
 
 function MapClickHandler({ onPick }: { onPick: (lat: number, lng: number) => void }) {
@@ -125,6 +126,8 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
   }
 
   const handleSubmit = async () => {
+    // Guard contre les double-clics rapides AVANT que setSubmitting(true) ne propage.
+    if (submitting) return
     if (!user) return
     if (!coords) {
       toast.error('Choisis une position')
@@ -136,8 +139,9 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
       return
     }
     setSubmitting(true)
+    // Photo upload déclaré au scope du handler pour permettre le rollback en catch.
+    let photo_url: string | null = null
     try {
-      let photo_url: string | null = null
       if (photoFile) {
         photo_url = await uploadPianoPhoto(photoFile, user.id)
       }
@@ -162,6 +166,12 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
       await queryClient.invalidateQueries({ queryKey: ['pianos'] })
       onClose()
     } catch (err) {
+      // Rollback : si la photo a été uploadée mais que l'insert piano a échoué
+      // (rate limit, RLS, network), supprime la photo orpheline du Storage pour
+      // ne pas polluer le quota. Best-effort, ne bloque pas le toast d'erreur.
+      if (photo_url) {
+        await deletePianoPhoto(photo_url).catch(() => {})
+      }
       toast.error(getErrorMessage(err, "Erreur d'ajout"))
     } finally {
       setSubmitting(false)
