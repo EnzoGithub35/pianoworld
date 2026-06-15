@@ -20,13 +20,7 @@ import {
   type PianoQuality
 } from '@/types/database'
 
-export function EditPianoForm({
-  piano,
-  onClose
-}: {
-  piano: Piano
-  onClose: () => void
-}) {
+export function EditPianoForm({ piano, onClose }: { piano: Piano; onClose: () => void }) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [address, setAddress] = useState(piano.address)
@@ -52,6 +46,8 @@ export function EditPianoForm({
   }
 
   const handleSubmit = async () => {
+    // Guard contre les double-clics rapides AVANT que setSubmitting(true) ne propage.
+    if (submitting) return
     if (!user) return
     const parsed = pianoFormSchema.safeParse({ address, comment, quality })
     if (!parsed.success) {
@@ -59,13 +55,17 @@ export function EditPianoForm({
       return
     }
     setSubmitting(true)
+    // Nouvelle URL uploadée — gardée hors du try pour pouvoir rollback en catch.
+    let newPhotoUrl: string | null = null
     try {
       let photo_url: string | null = piano.photo_url
       if (photoFile) {
-        if (piano.photo_url) await deletePianoPhoto(piano.photo_url)
-        photo_url = await uploadPianoPhoto(photoFile, user.id)
+        // Upload NEW avant delete OLD : si l'upload échoue, l'ancienne photo
+        // est encore en DB et le piano reste cohérent. Sinon on perdrait
+        // l'ancienne sans avoir la nouvelle.
+        newPhotoUrl = await uploadPianoPhoto(photoFile, user.id)
+        photo_url = newPhotoUrl
       } else if (removePhoto && piano.photo_url) {
-        await deletePianoPhoto(piano.photo_url)
         photo_url = null
       }
       const { error } = await supabase
@@ -81,12 +81,27 @@ export function EditPianoForm({
         logger.error('piano.edit', 'update failed', error, { pianoId: piano.id })
         throw error
       }
+      // Update DB OK → on peut maintenant supprimer l'ancienne photo si elle a
+      // été remplacée ou retirée. Best-effort : ne bloque pas le succès.
+      if ((newPhotoUrl || removePhoto) && piano.photo_url) {
+        await deletePianoPhoto(piano.photo_url).catch(() => {})
+      }
       logger.info('piano.edit', 'success', { pianoId: piano.id })
       toast.success('Modifications enregistrées')
+      // Invalidate les 3 query keys qui contiennent ce piano :
+      // - 'piano' singulier pour PianoPage détail
+      // - 'pianos' liste pour la carte
+      // - 'piano-updates' pour la section Activité/historique du piano
       await queryClient.invalidateQueries({ queryKey: ['piano', piano.id] })
       await queryClient.invalidateQueries({ queryKey: ['pianos'] })
+      await queryClient.invalidateQueries({ queryKey: ['piano-updates', piano.id] })
       onClose()
     } catch (err) {
+      // Rollback : si une nouvelle photo a été uploadée mais que l'update DB
+      // a échoué, supprime la photo orpheline pour ne pas polluer le quota.
+      if (newPhotoUrl) {
+        await deletePianoPhoto(newPhotoUrl).catch(() => {})
+      }
       toast.error(getErrorMessage(err, 'Erreur de mise à jour'))
     } finally {
       setSubmitting(false)
@@ -105,7 +120,11 @@ export function EditPianoForm({
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
         <div className="space-y-2">
           <Label htmlFor="address">Adresse</Label>
-          <Input id="address" value={address} onChange={(e) => setAddress(e.target.value)} />
+          <Input
+            id="address"
+            value={address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
         </div>
 
         <div className="space-y-2">
@@ -113,7 +132,11 @@ export function EditPianoForm({
           <div className="flex items-center gap-3">
             <label className="flex h-20 w-20 cursor-pointer items-center justify-center overflow-hidden rounded-md border-2 border-dashed border-border bg-muted text-muted-foreground hover:bg-accent">
               {photoPreview ? (
-                <img src={photoPreview} alt="aperçu" className="h-full w-full object-cover" />
+                <img
+                  src={photoPreview}
+                  alt="aperçu"
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <Camera className="h-6 w-6" />
               )}
@@ -136,7 +159,11 @@ export function EditPianoForm({
               />
             </label>
             {photoPreview && (
-              <button type="button" onClick={handleRemovePhoto} className="text-xs text-destructive">
+              <button
+                type="button"
+                onClick={handleRemovePhoto}
+                className="text-xs text-destructive"
+              >
                 Retirer la photo
               </button>
             )}
