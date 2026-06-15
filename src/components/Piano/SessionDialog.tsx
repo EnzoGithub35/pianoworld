@@ -1,20 +1,21 @@
 import { useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
+import { Users, Globe2, UserPlus } from 'lucide-react'
 import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
 import { useAuth } from '@/contexts/AuthContext'
+import { useFriends } from '@/hooks/useFriends'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { getErrorMessage } from '@/lib/errors'
 import { sessionFormSchema } from '@/lib/schemas'
-import {
-  SESSION_DURATION_OPTIONS,
-  SESSION_FUTURE_DAYS_MAX
-} from '@/lib/constants'
+import { SESSION_DURATION_OPTIONS, SESSION_FUTURE_DAYS_MAX } from '@/lib/constants'
 import { cn } from '@/lib/utils'
+import type { PianoSessionVisibility } from '@/types/database'
 
 /**
  * Formulaire de création de session.
@@ -43,11 +44,14 @@ export function SessionDialog({
 }) {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const friends = useFriends()
+  const friendsCount = friends.data?.length ?? 0
   const [preset, setPreset] = useState<StartPreset>('now')
   const [customStart, setCustomStart] = useState<string>(() =>
     localIsoForInput(new Date(Date.now() + 60 * 60 * 1000))
   )
   const [duration, setDuration] = useState<number>(30)
+  const [visibility, setVisibility] = useState<PianoSessionVisibility>('public')
   const [submitting, setSubmitting] = useState(false)
 
   const resolveStartDate = (): Date => {
@@ -71,11 +75,19 @@ export function SessionDialog({
   const minDateAttr = localIsoForInput(new Date())
 
   const handleSubmit = async () => {
+    if (submitting) return
     if (!user) return
+    // Safeguard friends-only sans ami : le radio devrait être désactivé,
+    // mais cache stale possible (user vient d'ajouter un ami dans un autre tab).
+    if (visibility === 'friends' && friendsCount === 0) {
+      toast.error("Tu n'as pas encore d'amis pour limiter la visibilité.")
+      return
+    }
     const startsAt = resolveStartDate()
     const parsed = sessionFormSchema.safeParse({
       starts_at: startsAt,
-      duration_min: duration
+      duration_min: duration,
+      visibility
     })
     if (!parsed.success) {
       toast.error(parsed.error.issues[0]?.message ?? 'Formulaire invalide')
@@ -87,7 +99,8 @@ export function SessionDialog({
         piano_id: pianoId,
         user_id: user.id,
         starts_at: parsed.data.starts_at.toISOString(),
-        duration_min: parsed.data.duration_min
+        duration_min: parsed.data.duration_min,
+        visibility: parsed.data.visibility
       })
       if (error) {
         logger.error('session.create', 'insert failed', error, { pianoId })
@@ -95,15 +108,20 @@ export function SessionDialog({
       }
       logger.info('session.create', 'success', {
         pianoId,
-        durationMin: parsed.data.duration_min
+        durationMin: parsed.data.duration_min,
+        visibility: parsed.data.visibility
       })
       toast.success("C'est noté, à tout de suite")
       await queryClient.invalidateQueries({ queryKey: ['piano-sessions', pianoId] })
       await queryClient.invalidateQueries({ queryKey: ['active-piano-ids'] })
       await queryClient.invalidateQueries({ queryKey: ['recent-feed'] })
+      await queryClient.invalidateQueries({
+        queryKey: ['piano-presence-list', pianoId]
+      })
+      await queryClient.invalidateQueries({ queryKey: ['piano-active-counts'] })
       onClose()
     } catch (err) {
-      toast.error(getErrorMessage(err, "Création échouée"))
+      toast.error(getErrorMessage(err, 'Création échouée'))
     } finally {
       setSubmitting(false)
     }
@@ -171,8 +189,58 @@ export function SessionDialog({
           </div>
         </div>
 
+        <div className="space-y-2">
+          <Label>Qui peut voir ?</Label>
+          {friendsCount === 0 ? (
+            <div className="rounded-md border border-dashed border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
+              <p className="mb-1.5">
+                Ta session sera <strong>publique</strong> (tout le monde).
+              </p>
+              <Link
+                to="/search"
+                onClick={onClose}
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+              >
+                <UserPlus className="h-3 w-3" />
+                Pour la limiter à tes amis, ajoute-en d'abord
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setVisibility('public')}
+                className={cn(
+                  'flex flex-col items-center gap-1 rounded-md border px-3 py-2.5 text-xs font-medium transition-colors',
+                  visibility === 'public'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background hover:bg-accent'
+                )}
+              >
+                <Globe2 className="h-4 w-4" />
+                Tout le monde
+              </button>
+              <button
+                type="button"
+                onClick={() => setVisibility('friends')}
+                className={cn(
+                  'flex flex-col items-center gap-1 rounded-md border px-3 py-2.5 text-xs font-medium transition-colors',
+                  visibility === 'friends'
+                    ? 'border-primary bg-primary text-primary-foreground'
+                    : 'border-border bg-background hover:bg-accent'
+                )}
+              >
+                <Users className="h-4 w-4" />
+                Mes amis ({friendsCount})
+              </button>
+            </div>
+          )}
+        </div>
+
         <p className="text-xs text-muted-foreground">
-          Les autres pianistes verront ton créneau. Tu pourras l'annuler à tout moment.
+          {visibility === 'friends'
+            ? 'Seuls tes amis verront ton créneau et recevront une notification.'
+            : 'Les autres pianistes verront ton créneau. Tes amis recevront une notification.'}
         </p>
 
         <div className="flex gap-2">

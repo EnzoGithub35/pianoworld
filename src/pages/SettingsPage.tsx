@@ -9,8 +9,10 @@ import {
   Shield,
   ShieldCheck,
   Sun,
-  Trash2
+  Trash2,
+  Users
 } from 'lucide-react'
+import { useFriends, usePendingReceivedCount } from '@/hooks/useFriends'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { EditPseudoDialog } from '@/components/Settings/EditPseudoDialog'
@@ -92,6 +94,15 @@ export function SettingsPage() {
   const [editPseudo, setEditPseudo] = useState(false)
   const [deleteAccount, setDeleteAccount] = useState(false)
   const [changePassword, setChangePassword] = useState(false)
+  const friends = useFriends()
+  const pendingCount = usePendingReceivedCount()
+  const friendsCount = friends.data?.length ?? 0
+  const friendsLabel =
+    pendingCount > 0
+      ? `${friendsCount} (${pendingCount} en attente)`
+      : friendsCount > 0
+        ? `${friendsCount}`
+        : undefined
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background">
@@ -113,6 +124,26 @@ export function SettingsPage() {
             label="Changer mon mot de passe"
             onClick={() => setChangePassword(true)}
           />
+        </Section>
+
+        <Section title="Social">
+          <Link
+            to="/dashboard?tab=friends"
+            className="flex items-center justify-between px-3 py-3 transition-colors hover:bg-accent"
+          >
+            <span className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Users className="h-4 w-4" />
+              </span>
+              <span className="text-sm font-medium">Mes amis</span>
+            </span>
+            <span className="flex items-center gap-2">
+              {friendsLabel && (
+                <span className="text-xs text-muted-foreground">{friendsLabel}</span>
+              )}
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            </span>
+          </Link>
         </Section>
 
         <Section title="Notifications">

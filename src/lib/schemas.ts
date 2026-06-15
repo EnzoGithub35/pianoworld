@@ -238,6 +238,8 @@ export const sessionFormSchema = z.object({
     })
     .int()
     .min(SESSION_DURATION_MIN, `Durée minimum ${SESSION_DURATION_MIN} min`)
-    .max(SESSION_DURATION_MAX, `Durée maximum ${SESSION_DURATION_MAX} min`)
+    .max(SESSION_DURATION_MAX, `Durée maximum ${SESSION_DURATION_MAX} min`),
+  /** v6 — qui voit cette session. Set-once côté DB (trigger BEFORE UPDATE). */
+  visibility: z.enum(['public', 'friends']).default('public')
 })
 export type SessionFormValues = z.infer<typeof sessionFormSchema>

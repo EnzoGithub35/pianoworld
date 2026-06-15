@@ -12,6 +12,7 @@ import { PianoNavigateButton } from '@/components/Piano/PianoNavigateButton'
 import { PianoShareButton } from '@/components/Piano/PianoShareButton'
 import { PianoReportButton } from '@/components/Piano/PianoReportButton'
 import { PianoActivity } from '@/components/Piano/PianoActivity'
+import { PianoPresenceCounter } from '@/components/Piano/PianoPresenceCounter'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -115,7 +116,10 @@ export function PianoPage() {
             <span className="inline-flex items-center gap-1">
               <User className="h-3 w-3" />
               {piano.author?.pseudo ? (
-                <Link to={`/user/${piano.author.pseudo}`} className="text-primary hover:underline">
+                <Link
+                  to={`/user/${piano.author.pseudo}`}
+                  className="text-primary hover:underline"
+                >
                   @{piano.author.pseudo}
                 </Link>
               ) : (
@@ -128,6 +132,13 @@ export function PianoPage() {
             </span>
           </div>
         </section>
+
+        {/* Compteur présence en cours */}
+        <PianoPresenceCounter
+          pianoId={piano.id}
+          pianoAddress={piano.address}
+          variant="page"
+        />
 
         {/* Commentaire */}
         <section className="rounded-xl border border-border bg-card p-4">
@@ -185,7 +196,11 @@ export function PianoPage() {
       </main>
 
       {editing && <EditPianoForm piano={piano} onClose={() => setEditing(false)} />}
-      <DeletePianoDialog open={deleting} piano={piano} onClose={() => setDeleting(false)} />
+      <DeletePianoDialog
+        open={deleting}
+        piano={piano}
+        onClose={() => setDeleting(false)}
+      />
     </div>
   )
 }
