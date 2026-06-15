@@ -64,7 +64,9 @@ const KIND_TO_PREF: Record<NotificationKind, string> = {
   // v6 — système d'amitié
   friend_arriving: 'notify_friend_arriving',
   friend_request_received: 'notify_friend_request_received',
-  friend_request_accepted: 'notify_friend_request_accepted'
+  friend_request_accepted: 'notify_friend_request_accepted',
+  // v7 — pianos favoris
+  piano_favorite_update: 'notify_favorite_update'
 }
 
 type OutboxRow = {

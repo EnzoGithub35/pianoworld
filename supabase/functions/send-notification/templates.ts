@@ -19,6 +19,7 @@ export type NotificationKind =
   | 'friend_arriving'
   | 'friend_request_received'
   | 'friend_request_accepted'
+  | 'piano_favorite_update'
 
 export type OutboxPayload = Record<string, unknown>
 
@@ -251,6 +252,29 @@ export function renderMail(
         html: shell(subject, body, { label: 'Voir la demande', url }),
         pushTitle: sanitizeHeader(`@${requesterPseudo} t'envoie une demande d'ami`),
         pushBody: sanitizeHeader('Réponds depuis ton dashboard')
+      }
+    }
+    case 'piano_favorite_update': {
+      const updaterPseudo = String(payload.updater_pseudo ?? 'Quelqu’un')
+      const pianoAddress = String(payload.piano_address ?? '?')
+      const pianoId = String(payload.piano_id ?? '')
+      const url = `${appUrl}/piano/${encodeURIComponent(pianoId)}`
+      const stillThere =
+        typeof payload.still_there === 'boolean' ? payload.still_there : null
+      const subject = sanitizeHeader(`Mise à jour sur un piano que tu suis : ${pianoAddress}`)
+      const body = `
+        <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
+        <p><strong>@${escapeHtml(updaterPseudo)}</strong> a mis à jour le piano de <strong>${escapeHtml(pianoAddress)}</strong> que tu as ajouté à tes favoris.</p>
+        ${stillThere === false ? `<p>⚠️ Le piano <strong>n'est plus là</strong> d'après la dernière MAJ.</p>` : ''}
+        ${stillThere === true ? `<p>Le piano est <strong>encore là</strong> ✅</p>` : ''}
+        ${payload.quality ? `<p>État actuel : <strong>${escapeHtml(payload.quality)}</strong>.</p>` : ''}
+      `
+      return {
+        subject,
+        url,
+        html: shell(subject, body, { label: 'Voir le piano', url }),
+        pushTitle: sanitizeHeader(`MAJ sur un piano que tu suis 🔖`),
+        pushBody: sanitizeHeader(`@${updaterPseudo} · ${pianoAddress}`)
       }
     }
     case 'friend_request_accepted': {

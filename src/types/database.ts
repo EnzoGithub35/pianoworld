@@ -48,6 +48,10 @@ export type Profile = {
   banned_at: string | null
   accept_cgu_at: string | null
   accept_cgu_version: string | null
+  /** v7 — opt-in, NULL par défaut, visible uniquement via RPCs SECURITY DEFINER. */
+  first_name: string | null
+  /** v7 — opt-in, NULL par défaut, visible uniquement via RPCs SECURITY DEFINER. */
+  last_name: string | null
 }
 
 export type EventRow = {
@@ -91,6 +95,8 @@ export type NotificationPreferences = {
   notify_friend_arriving: boolean
   notify_friend_request_received: boolean
   notify_friend_request_accepted: boolean
+  /** v7 — MAJ sur un piano que je suis (favori). */
+  notify_favorite_update: boolean
   push_enabled: boolean
   updated_at: string
 }
@@ -104,6 +110,7 @@ export type NotificationKind =
   | 'friend_arriving'
   | 'friend_request_received'
   | 'friend_request_accepted'
+  | 'piano_favorite_update'
 
 export type PushSubscription = {
   id: string
@@ -234,6 +241,50 @@ export type PianoPresenceCount = {
   count: number
 }
 
+// v7 — recherche unifiée + favoris
+
+/** Row de piano_favorites (SELECT self-only via RLS). */
+export type PianoFavorite = {
+  piano_id: string
+  user_id: string
+  created_at: string
+}
+
+/** Résultat de search_users / find_user_by_email — first/last name peuvent être NULL (opt-in). */
+export type UserSearchResult = {
+  id: string
+  pseudo: string
+  first_name: string | null
+  last_name: string | null
+  created_at: string
+}
+
+/** Résultat de search_pianos — inclut le pseudo auteur (JOIN). */
+export type PianoSearchResult = {
+  id: string
+  address: string
+  comment: string
+  quality: PianoQuality
+  photo_url: string | null
+  lat: number
+  lng: number
+  created_by: string | null
+  author_pseudo: string | null
+  created_at: string
+}
+
+/** Résultat de get_my_favorites pour le Dashboard tab Favoris. */
+export type FavoriteWithPiano = {
+  piano_id: string
+  address: string
+  quality: PianoQuality
+  photo_url: string | null
+  lat: number
+  lng: number
+  favorited_at: string
+  last_update_at: string | null
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -247,6 +298,8 @@ export type Database = {
           banned_at?: string | null
           accept_cgu_at?: string | null
           accept_cgu_version?: string | null
+          first_name?: string | null
+          last_name?: string | null
         }
         Update: {
           pseudo?: string
@@ -255,6 +308,8 @@ export type Database = {
           banned_at?: string | null
           accept_cgu_at?: string | null
           accept_cgu_version?: string | null
+          first_name?: string | null
+          last_name?: string | null
         }
         Relationships: []
       }
@@ -413,6 +468,7 @@ export type Database = {
           notify_friend_arriving?: boolean
           notify_friend_request_received?: boolean
           notify_friend_request_accepted?: boolean
+          notify_favorite_update?: boolean
           push_enabled?: boolean
           updated_at?: string
         }
@@ -425,9 +481,20 @@ export type Database = {
           notify_friend_arriving?: boolean
           notify_friend_request_received?: boolean
           notify_friend_request_accepted?: boolean
+          notify_favorite_update?: boolean
           push_enabled?: boolean
           updated_at?: string
         }
+        Relationships: []
+      }
+      piano_favorites: {
+        Row: PianoFavorite
+        Insert: {
+          piano_id: string
+          user_id: string
+          created_at?: string
+        }
+        Update: Record<string, never>
         Relationships: []
       }
       push_subscriptions: {
@@ -574,6 +641,35 @@ export type Database = {
       are_friends: {
         Args: { a: string; b: string }
         Returns: boolean
+      }
+      // v7 — recherche unifiée + favoris
+      search_users: {
+        Args: { q: string }
+        Returns: UserSearchResult[]
+      }
+      find_user_by_email: {
+        Args: { p_email: string }
+        Returns: UserSearchResult[]
+      }
+      search_pianos: {
+        Args: { q: string }
+        Returns: PianoSearchResult[]
+      }
+      update_my_profile_names: {
+        Args: { p_first: string | null; p_last: string | null }
+        Returns: undefined
+      }
+      toggle_piano_favorite: {
+        Args: { p_piano: string }
+        Returns: boolean
+      }
+      get_my_favorites: {
+        Args: Record<string, never>
+        Returns: FavoriteWithPiano[]
+      }
+      enforce_caller_rate_limit: {
+        Args: { p_action: string; p_max: number; p_window: string }
+        Returns: undefined
       }
     }
     Enums: {
