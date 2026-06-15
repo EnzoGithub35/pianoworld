@@ -60,7 +60,11 @@ const KIND_TO_PREF: Record<NotificationKind, string> = {
   piano_update: 'notify_piano_updates',
   session_conflict: 'notify_session_conflict',
   request_reply: 'notify_request_reply',
-  event_created: 'notify_events'
+  event_created: 'notify_events',
+  // v6 — système d'amitié
+  friend_arriving: 'notify_friend_arriving',
+  friend_request_received: 'notify_friend_request_received',
+  friend_request_accepted: 'notify_friend_request_accepted'
 }
 
 type OutboxRow = {
@@ -205,6 +209,31 @@ async function process(outboxId: string): Promise<void> {
   if (prefs && prefCol && prefs[prefCol] === false) {
     await markSent(row.id, 'opted-out')
     return
+  }
+
+  // v6 : pour friend_arriving, on re-vérifie l'amitié à delivery time.
+  // Cas race : sender crée session → trigger enqueue notif → sender retire
+  // l'amitié AVANT que l'Edge Function process la ligne. Sans re-verify,
+  // l'ex-ami reçoit un mail révélant un piano où va le sender. Privacy P1.
+  if (row.kind === 'friend_arriving') {
+    const senderId = (row.payload as { sender_user_id?: string })?.sender_user_id
+    if (!senderId) {
+      await markSent(row.id, 'friend_arriving: sender_user_id missing in payload')
+      return
+    }
+    const { data: stillFriends, error: arErr } = await supabase.rpc('are_friends_safe', {
+      a: senderId,
+      b: row.recipient_id
+    })
+    if (arErr) {
+      console.error('are_friends_safe rpc failed', arErr)
+      await markSent(row.id, `are_friends_safe rpc failed: ${arErr.message}`)
+      return
+    }
+    if (!stillFriends) {
+      await markSent(row.id, 'no-longer-friends')
+      return
+    }
   }
 
   const { data: authUser } = await supabase.auth.admin.getUserById(row.recipient_id)

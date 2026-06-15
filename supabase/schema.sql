@@ -1111,7 +1111,9 @@ begin
     case when TG_TABLE_NAME = 'piano_updates' then (row_to_json(NEW)->>'updated_by')::uuid end,
     case when TG_TABLE_NAME = 'piano_reports' then (row_to_json(NEW)->>'reported_by')::uuid end,
     case when TG_TABLE_NAME in ('piano_visits', 'piano_sessions', 'user_requests')
-      then (row_to_json(NEW)->>'user_id')::uuid end
+      then (row_to_json(NEW)->>'user_id')::uuid end,
+    -- v6 : table friendships utilise requester_id (l'initiateur de la demande).
+    case when TG_TABLE_NAME = 'friendships' then (row_to_json(NEW)->>'requester_id')::uuid end
   );
   if v_uid is null then
     raise exception 'rate_limit: cannot resolve user_id on table %', TG_TABLE_NAME;
@@ -1784,6 +1786,686 @@ as $$
     and sent_at < now() - interval '30 days';
 $$;
 revoke all on function public.purge_old_notifications() from public;
+
+-- ============================
+-- 14. v6 — Système d'amitié + visibility sessions + compteur présence
+-- ============================
+-- ⚠️ Si ce fichier est exécuté via `psql -1` (transaction unique), les
+-- 3 `ALTER TYPE notification_kind ADD VALUE` ci-dessous doivent être COMMITTED
+-- avant utilisation dans les triggers. Le SQL Editor Supabase exécute chaque
+-- statement dans sa propre transaction, donc OK par défaut.
+
+-- 14.a Helpers SECURITY DEFINER
+-- ---------------------------------------------------------------------
+
+-- are_friends(a, b) : guard anti-graph-probing + short-circuit null.
+-- Le caller doit être l'un des 2 endpoints (ou admin). Empêche un attaquant
+-- de probe la friendship graph entière via appels en boucle sur des UUID
+-- d'autres utilisateurs.
+create or replace function public.are_friends(a uuid, b uuid)
+returns boolean
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+begin
+  if a is null or b is null or a = b then return false; end if;
+  if auth.uid() not in (a, b) and not public.is_admin() then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  return exists(
+    select 1 from public.friendships
+    where status = 'accepted'
+      and user_a = least(a, b)
+      and user_b = greatest(a, b)
+  );
+end$$;
+revoke all on function public.are_friends(uuid, uuid) from public, anon;
+grant execute on function public.are_friends(uuid, uuid) to authenticated;
+
+-- are_friends_safe(a, b) : variant SANS guard auth.uid(), réservé service_role.
+-- Utilisé par l'Edge Function send-notification pour re-vérifier l'amitié
+-- à delivery time du kind 'friend_arriving' (anti-leak si amitié supprimée
+-- entre l'enqueue du trigger et l'envoi du mail/push).
+create or replace function public.are_friends_safe(a uuid, b uuid)
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select case
+    when a is null or b is null or a = b then false
+    else exists(
+      select 1 from public.friendships
+      where status = 'accepted'
+        and user_a = least(a, b)
+        and user_b = greatest(a, b)
+    )
+  end;
+$$;
+revoke all on function public.are_friends_safe(uuid, uuid) from public, anon, authenticated;
+grant execute on function public.are_friends_safe(uuid, uuid) to service_role;
+
+-- reject_visibility_update : trigger BEFORE UPDATE qui interdit toute
+-- modification de piano_sessions.visibility après l'INSERT (set-once).
+-- Empêche un race avec le trigger queue_friend_arriving_notification :
+-- sans ça, un user pourrait créer en public puis flip en friends après
+-- les notifs envoyées (ou inversement).
+create or replace function public.reject_visibility_update()
+returns trigger
+language plpgsql
+as $$
+begin
+  if new.visibility is distinct from old.visibility then
+    raise exception 'visibility is set-once' using errcode = '42501';
+  end if;
+  return new;
+end$$;
+
+-- 14.b Tables
+-- ---------------------------------------------------------------------
+
+-- friendships : modèle 1-row canonique (user_a < user_b). Aucun grant côté
+-- client → table totalement invisible via PostgREST. Accès exclusif via
+-- les RPCs SECURITY DEFINER de cette section.
+create table if not exists public.friendships (
+  id            uuid primary key default gen_random_uuid(),
+  user_a        uuid not null references public.profiles(id) on delete cascade,
+  user_b        uuid not null references public.profiles(id) on delete cascade,
+  requester_id  uuid not null references public.profiles(id) on delete cascade,
+  status        text not null default 'pending' check (status in ('pending','accepted')),
+  created_at    timestamptz not null default now(),
+  responded_at  timestamptz,
+  constraint friendships_canonical_order  check (user_a < user_b),
+  constraint friendships_no_self          check (user_a <> user_b),
+  constraint friendships_requester_valid  check (requester_id in (user_a, user_b)),
+  constraint friendships_unique_pair      unique (user_a, user_b)
+);
+create index if not exists friendships_user_a_idx
+  on public.friendships(user_a) where status = 'accepted';
+create index if not exists friendships_user_b_idx
+  on public.friendships(user_b) where status = 'accepted';
+create index if not exists friendships_pending_idx
+  on public.friendships(user_a, user_b) where status = 'pending';
+create index if not exists friendships_requester_idx
+  on public.friendships(requester_id, status);
+alter table public.friendships enable row level security;
+revoke all on public.friendships from anon, authenticated;
+-- AUCUNE policy : totalement invisible côté PostgREST.
+
+-- Vue helper symétrique. RLS security_invoker → inaccessible aux clients
+-- tant que friendships est REVOKE. Utile pour les RPCs internes qui veulent
+-- lister "mes amis" sans UNION manuelle.
+create or replace view public.friendships_symmetric
+with (security_invoker = true) as
+  select id, user_a as user_id, user_b as friend_id, requester_id, status, created_at, responded_at
+  from public.friendships
+  union all
+  select id, user_b as user_id, user_a as friend_id, requester_id, status, created_at, responded_at
+  from public.friendships;
+revoke all on public.friendships_symmetric from anon, authenticated;
+
+-- friendship_rejections : cooldown anti-stalking (P0).
+-- Quand B reject la demande de A, on insère (A, B, now()). A ne peut pas
+-- renvoyer pendant 30 jours (send_friend_request raise 'forbidden').
+create table if not exists public.friendship_rejections (
+  requester_id  uuid not null references public.profiles(id) on delete cascade,
+  target_id     uuid not null references public.profiles(id) on delete cascade,
+  rejected_at   timestamptz not null default now(),
+  primary key (requester_id, target_id)
+);
+create index if not exists friendship_rejections_target_idx
+  on public.friendship_rejections(target_id, rejected_at);
+alter table public.friendship_rejections enable row level security;
+revoke all on public.friendship_rejections from anon, authenticated;
+-- Accès exclusivement via RPCs. Purge pg_cron mensuelle (cf. section 13).
+
+-- friend_arriving_dedup : anti-spam digest hourly (P1).
+-- Tuple (recipient, sender, piano) déjà enqueué moins d'1h → skip dans
+-- le trigger queue_friend_arriving_notification (évite le notif-spam).
+create table if not exists public.friend_arriving_dedup (
+  recipient_id   uuid not null references public.profiles(id) on delete cascade,
+  sender_id      uuid not null references public.profiles(id) on delete cascade,
+  piano_id       uuid not null references public.pianos(id) on delete cascade,
+  last_queued_at timestamptz not null default now(),
+  primary key (recipient_id, sender_id, piano_id)
+);
+alter table public.friend_arriving_dedup enable row level security;
+revoke all on public.friend_arriving_dedup from anon, authenticated;
+-- Purge pg_cron hebdomadaire (cf. section 13).
+
+-- 14.c ALTER piano_sessions : visibility + index + trigger immutable + RLS
+-- ---------------------------------------------------------------------
+
+alter table public.piano_sessions
+  add column if not exists visibility text not null default 'public'
+    check (visibility in ('public','friends'));
+
+create index if not exists piano_sessions_visibility_idx
+  on public.piano_sessions(piano_id, visibility, starts_at)
+  where cancelled_at is null;
+
+drop trigger if exists piano_sessions_visibility_immutable on public.piano_sessions;
+create trigger piano_sessions_visibility_immutable
+  before update on public.piano_sessions
+  for each row execute function public.reject_visibility_update();
+
+-- RLS SELECT visibility-aware. La policy USING couvre :
+--   - sessions publiques (toutes accessibles, y compris anon)
+--   - sessions du caller (self, toujours visibles)
+--   - admin/superadmin
+--   - sessions d'un ami (friends-only).
+-- NB: le compteur de présence (RPC get_active_piano_counts) bypass cette RLS
+-- via SECURITY DEFINER mais applique le MÊME filtre, donc pas de delta
+-- cardinalité exploitable pour deviner les friends-only invisibles.
+drop policy if exists piano_sessions_select on public.piano_sessions;
+create policy piano_sessions_select on public.piano_sessions
+  for select using (
+    visibility = 'public'
+    or auth.uid() = user_id
+    or public.is_admin()
+    or (auth.uid() is not null and public.are_friends(auth.uid(), user_id))
+  );
+
+-- 14.d ALTER TYPE notification_kind + 3 colonnes prefs
+-- ---------------------------------------------------------------------
+
+alter type notification_kind add value if not exists 'friend_arriving';
+alter type notification_kind add value if not exists 'friend_request_received';
+alter type notification_kind add value if not exists 'friend_request_accepted';
+
+alter table public.notification_preferences
+  add column if not exists notify_friend_arriving         boolean not null default true,
+  add column if not exists notify_friend_request_received boolean not null default true,
+  add column if not exists notify_friend_request_accepted boolean not null default true;
+
+-- 14.e Trigger rate limit friendships (BEFORE INSERT)
+-- ---------------------------------------------------------------------
+-- enforce_rate_limit() résoud déjà v_uid via requester_id pour friendships
+-- (cf. coalesce dans la fonction, modifié plus haut).
+
+drop trigger if exists friendships_rate_limit on public.friendships;
+create trigger friendships_rate_limit
+  before insert on public.friendships
+  for each row execute function public.enforce_rate_limit('friend_request', '20', '24 hours');
+
+-- 14.f Trigger AFTER INSERT piano_sessions : queue friend_arriving notifs
+-- ---------------------------------------------------------------------
+-- Notifie les amis (notify_friend_arriving=true) UNIQUEMENT. Skip si :
+--   - cancelled marker présent
+--   - starts_at < now()-5min (anti-backfill : sessions retroactives)
+--   - ami banni OU sender banni
+--   - dedup hourly (friend_arriving_dedup)
+-- Snapshot pseudo + piano_address dans payload pour rester cohérent même si
+-- le compte du sender est supprimé entre enqueue et delivery.
+create or replace function public.queue_friend_arriving_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sender_pseudo  text;
+  v_piano_address  text;
+begin
+  if NEW.cancelled_at is not null then return NEW; end if;
+  if NEW.starts_at < now() - interval '5 minutes' then return NEW; end if;
+
+  select pseudo into v_sender_pseudo from public.profiles where id = NEW.user_id;
+  select address into v_piano_address from public.pianos where id = NEW.piano_id;
+  if v_sender_pseudo is null or v_piano_address is null then return NEW; end if;
+  if exists(
+    select 1 from public.profiles where id = NEW.user_id and banned_at is not null
+  ) then return NEW; end if;
+
+  with eligibles as (
+    select fs.friend_id as recipient_id
+    from public.friendships_symmetric fs
+    join public.profiles recipient on recipient.id = fs.friend_id
+    join public.notification_preferences np on np.user_id = fs.friend_id
+    left join public.friend_arriving_dedup d
+      on d.recipient_id = fs.friend_id
+     and d.sender_id   = NEW.user_id
+     and d.piano_id    = NEW.piano_id
+     and d.last_queued_at > now() - interval '1 hour'
+    where fs.user_id = NEW.user_id
+      and fs.status = 'accepted'
+      and recipient.banned_at is null
+      and np.notify_friend_arriving = true
+      and d.recipient_id is null
+  ),
+  inserted as (
+    insert into public.notifications_outbox(recipient_id, kind, payload)
+    select
+      e.recipient_id,
+      'friend_arriving'::notification_kind,
+      jsonb_build_object(
+        'piano_id',       NEW.piano_id,
+        'piano_address',  v_piano_address,
+        'session_id',     NEW.id,
+        'starts_at',      NEW.starts_at,
+        'duration_min',   NEW.duration_min,
+        'sender_user_id', NEW.user_id,
+        'sender_pseudo',  v_sender_pseudo,
+        'visibility',     NEW.visibility
+      )
+    from eligibles e
+    returning recipient_id
+  )
+  insert into public.friend_arriving_dedup(recipient_id, sender_id, piano_id, last_queued_at)
+  select i.recipient_id, NEW.user_id, NEW.piano_id, now()
+  from inserted i
+  on conflict (recipient_id, sender_id, piano_id)
+    do update set last_queued_at = excluded.last_queued_at;
+
+  return NEW;
+end$$;
+
+drop trigger if exists piano_sessions_queue_friend_arriving on public.piano_sessions;
+create trigger piano_sessions_queue_friend_arriving
+  after insert on public.piano_sessions
+  for each row execute function public.queue_friend_arriving_notification();
+
+revoke all on function public.queue_friend_arriving_notification() from public, anon, authenticated;
+
+-- 14.g RPCs SECURITY DEFINER
+-- ---------------------------------------------------------------------
+
+-- 14.g.1 send_friend_request : envoie demande, gère auto-accept croisé,
+-- respecte cooldown anti-stalking, rate limit via trigger.
+create or replace function public.send_friend_request(target uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid       uuid := auth.uid();
+  v_low       uuid;
+  v_high      uuid;
+  v_existing  public.friendships;
+  v_new_id    uuid;
+begin
+  if v_uid is null then raise exception 'forbidden' using errcode = '42501'; end if;
+  if target is null or target = v_uid then raise exception 'forbidden' using errcode = '42501'; end if;
+  if public.is_banned(v_uid) or public.is_banned(target) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+
+  v_low  := least(v_uid, target);
+  v_high := greatest(v_uid, target);
+
+  -- Cooldown anti-stalking : si target avait reject < 30 jours, raise silencieux.
+  if exists(
+    select 1 from public.friendship_rejections
+    where requester_id = v_uid and target_id = target
+      and rejected_at > now() - interval '30 days'
+  ) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+
+  -- Sérialise la paire (anti-race cross-request).
+  perform pg_advisory_xact_lock(hashtext(v_low::text || ':' || v_high::text));
+
+  select * into v_existing from public.friendships
+   where user_a = v_low and user_b = v_high
+   for update;
+
+  if found then
+    if v_existing.status = 'accepted' then
+      return v_existing.id;
+    end if;
+    if v_existing.requester_id = v_uid then
+      return v_existing.id;
+    end if;
+    -- Cas auto-accept croisé : l'autre nous a demandé en même temps.
+    update public.friendships
+       set status = 'accepted', responded_at = now()
+     where id = v_existing.id;
+    insert into public.notifications_outbox(recipient_id, kind, payload)
+    select uid, 'friend_request_accepted'::notification_kind,
+           jsonb_build_object(
+             'friendship_id', v_existing.id,
+             'other_user_id', case when uid = v_uid then target else v_uid end,
+             'other_pseudo',  (select pseudo from public.profiles where id = case when uid = v_uid then target else v_uid end),
+             'auto_accepted', true
+           )
+    from unnest(array[v_uid, target]) as uid
+    where exists(
+      select 1 from public.notification_preferences np
+      where np.user_id = uid and np.notify_friend_request_accepted = true
+    );
+    return v_existing.id;
+  end if;
+
+  insert into public.friendships(user_a, user_b, requester_id, status)
+  values (v_low, v_high, v_uid, 'pending')
+  returning id into v_new_id;
+
+  insert into public.notifications_outbox(recipient_id, kind, payload)
+  select target, 'friend_request_received'::notification_kind,
+         jsonb_build_object(
+           'friendship_id',    v_new_id,
+           'requester_id',     v_uid,
+           'requester_pseudo', (select pseudo from public.profiles where id = v_uid)
+         )
+  where exists(
+    select 1 from public.notification_preferences np
+    where np.user_id = target and np.notify_friend_request_received = true
+  );
+
+  return v_new_id;
+end$$;
+
+revoke all on function public.send_friend_request(uuid) from public, anon;
+grant execute on function public.send_friend_request(uuid) to authenticated;
+
+-- 14.g.2 accept_friend_request : idempotent + advisory lock
+create or replace function public.accept_friend_request(request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_row public.friendships;
+begin
+  if v_uid is null then raise exception 'forbidden' using errcode = '42501'; end if;
+  if public.is_banned(v_uid) then raise exception 'forbidden' using errcode = '42501'; end if;
+
+  perform pg_advisory_xact_lock(hashtext('fr:' || request_id::text));
+
+  select * into v_row from public.friendships
+   where id = request_id
+   for update;
+
+  if not found then raise exception 'forbidden' using errcode = '42501'; end if;
+  if v_uid not in (v_row.user_a, v_row.user_b) then raise exception 'forbidden' using errcode = '42501'; end if;
+  if v_uid = v_row.requester_id then raise exception 'forbidden' using errcode = '42501'; end if;
+  if v_row.status = 'accepted' then return; end if;
+
+  if public.is_banned(v_row.requester_id) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+
+  update public.friendships
+     set status = 'accepted', responded_at = now()
+   where id = request_id;
+
+  insert into public.notifications_outbox(recipient_id, kind, payload)
+  select v_row.requester_id, 'friend_request_accepted'::notification_kind,
+         jsonb_build_object(
+           'friendship_id', v_row.id,
+           'other_user_id', v_uid,
+           'other_pseudo',  (select pseudo from public.profiles where id = v_uid),
+           'auto_accepted', false
+         )
+  where exists(
+    select 1 from public.notification_preferences np
+    where np.user_id = v_row.requester_id and np.notify_friend_request_accepted = true
+  );
+end$$;
+
+revoke all on function public.accept_friend_request(uuid) from public, anon;
+grant execute on function public.accept_friend_request(uuid) to authenticated;
+
+-- 14.g.3 reject_friend_request : DELETE + cooldown insertion (ghost reject)
+create or replace function public.reject_friend_request(request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_row public.friendships;
+begin
+  if v_uid is null then raise exception 'forbidden' using errcode = '42501'; end if;
+
+  perform pg_advisory_xact_lock(hashtext('fr:' || request_id::text));
+
+  select * into v_row from public.friendships
+   where id = request_id and status = 'pending'
+   for update;
+
+  if not found then raise exception 'forbidden' using errcode = '42501'; end if;
+  if v_uid not in (v_row.user_a, v_row.user_b) then raise exception 'forbidden' using errcode = '42501'; end if;
+  if v_uid = v_row.requester_id then raise exception 'forbidden' using errcode = '42501'; end if;
+
+  delete from public.friendships where id = request_id;
+
+  insert into public.friendship_rejections(requester_id, target_id, rejected_at)
+  values (v_row.requester_id, v_uid, now())
+  on conflict (requester_id, target_id) do update set rejected_at = excluded.rejected_at;
+end$$;
+
+revoke all on function public.reject_friend_request(uuid) from public, anon;
+grant execute on function public.reject_friend_request(uuid) to authenticated;
+
+-- 14.g.4 cancel_friend_request : par l'initiateur uniquement
+create or replace function public.cancel_friend_request(request_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_row public.friendships;
+begin
+  if v_uid is null then raise exception 'forbidden' using errcode = '42501'; end if;
+
+  perform pg_advisory_xact_lock(hashtext('fr:' || request_id::text));
+
+  select * into v_row from public.friendships
+   where id = request_id and status = 'pending'
+   for update;
+
+  if not found then raise exception 'forbidden' using errcode = '42501'; end if;
+  if v_uid <> v_row.requester_id then raise exception 'forbidden' using errcode = '42501'; end if;
+
+  delete from public.friendships where id = request_id;
+end$$;
+
+revoke all on function public.cancel_friend_request(uuid) from public, anon;
+grant execute on function public.cancel_friend_request(uuid) to authenticated;
+
+-- 14.g.5 remove_friendship : DELETE row canonique + audit_log
+create or replace function public.remove_friendship(other_user uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid           uuid := auth.uid();
+  v_low           uuid;
+  v_high          uuid;
+  v_friendship_id uuid;
+begin
+  if v_uid is null then raise exception 'forbidden' using errcode = '42501'; end if;
+  if other_user is null or other_user = v_uid then raise exception 'forbidden' using errcode = '42501'; end if;
+
+  v_low  := least(v_uid, other_user);
+  v_high := greatest(v_uid, other_user);
+
+  perform pg_advisory_xact_lock(hashtext(v_low::text || ':' || v_high::text));
+
+  delete from public.friendships
+   where user_a = v_low and user_b = v_high and status = 'accepted'
+   returning id into v_friendship_id;
+
+  if v_friendship_id is null then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+
+  perform public.write_audit_log('remove_friendship', other_user,
+    jsonb_build_object('friendship_id', v_friendship_id));
+end$$;
+
+revoke all on function public.remove_friendship(uuid) from public, anon;
+grant execute on function public.remove_friendship(uuid) to authenticated;
+
+-- 14.g.6 get_my_friends : liste paginée des amis acceptés
+create or replace function public.get_my_friends()
+returns table(
+  id uuid,
+  pseudo text,
+  created_at timestamptz,
+  friendship_since timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select p.id, p.pseudo, p.created_at, fs.responded_at as friendship_since
+  from public.friendships_symmetric fs
+  join public.profiles p on p.id = fs.friend_id
+  where fs.user_id = auth.uid()
+    and fs.status = 'accepted'
+    and p.banned_at is null
+  order by fs.responded_at desc nulls last
+  limit 500;
+$$;
+
+revoke all on function public.get_my_friends() from public, anon;
+grant execute on function public.get_my_friends() to authenticated;
+
+-- 14.g.7 get_my_friend_requests : direction received|sent
+create or replace function public.get_my_friend_requests(direction text default 'received')
+returns table(
+  request_id uuid,
+  user_id uuid,
+  pseudo text,
+  created_at timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select fs.id as request_id, fs.friend_id as user_id, p.pseudo, fs.created_at
+  from public.friendships_symmetric fs
+  join public.profiles p on p.id = fs.friend_id
+  where fs.user_id = auth.uid()
+    and fs.status = 'pending'
+    and direction in ('received','sent')
+    and (
+      (direction = 'received' and fs.requester_id <> auth.uid())
+      or
+      (direction = 'sent' and fs.requester_id = auth.uid())
+    )
+    and p.banned_at is null
+  order by fs.created_at desc
+  limit 200;
+$$;
+
+revoke all on function public.get_my_friend_requests(text) from public, anon;
+grant execute on function public.get_my_friend_requests(text) to authenticated;
+
+-- 14.g.8 get_friend_status : statut bilatéral avec un target
+create or replace function public.get_friend_status(target uuid)
+returns text
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_row public.friendships;
+begin
+  if v_uid is null then raise exception 'forbidden' using errcode = '42501'; end if;
+  if target is null then return 'none'; end if;
+  if target = v_uid then return 'self'; end if;
+
+  select * into v_row from public.friendships
+   where user_a = least(v_uid, target) and user_b = greatest(v_uid, target);
+  if not found then return 'none'; end if;
+  if v_row.status = 'accepted' then return 'friends'; end if;
+  if v_row.requester_id = v_uid then return 'pending_sent'; end if;
+  return 'pending_received';
+end$$;
+
+revoke all on function public.get_friend_status(uuid) from public, anon;
+grant execute on function public.get_friend_status(uuid) to authenticated;
+
+-- 14.g.9 get_active_piano_counts : batch RPC pour PianoMap.
+-- Retourne le nombre de sessions ACTIVES (live maintenant) VISIBLES au caller.
+-- SECURITY DEFINER pour bypass RLS, mais applique le MÊME filtre visibility
+-- que list_piano_presence → pas de delta cardinalité exploitable.
+create or replace function public.get_active_piano_counts(piano_ids uuid[])
+returns table(piano_id uuid, count int)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select ps.piano_id, count(*)::int
+  from public.piano_sessions ps
+  where ps.piano_id = any(piano_ids)
+    and ps.cancelled_at is null
+    and now() between ps.starts_at and ps.starts_at + (ps.duration_min || ' minutes')::interval
+    and (
+      ps.visibility = 'public'
+      or ps.user_id = auth.uid()
+      or public.is_admin()
+      or (auth.uid() is not null and exists(
+        select 1 from public.friendships f
+        where f.status = 'accepted'
+          and f.user_a = least(auth.uid(), ps.user_id)
+          and f.user_b = greatest(auth.uid(), ps.user_id)
+      ))
+    )
+  group by ps.piano_id;
+$$;
+
+revoke all on function public.get_active_piano_counts(uuid[]) from public;
+grant execute on function public.get_active_piano_counts(uuid[]) to anon, authenticated;
+
+-- 14.g.10 list_piano_presence : sessions actives+upcoming visibles sur 1 piano
+create or replace function public.list_piano_presence(p_piano uuid)
+returns table(
+  session_id uuid,
+  user_id uuid,
+  pseudo text,
+  starts_at timestamptz,
+  duration_min int,
+  visibility text
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select ps.id, ps.user_id, p.pseudo, ps.starts_at, ps.duration_min, ps.visibility
+  from public.piano_sessions ps
+  join public.profiles p on p.id = ps.user_id
+  where ps.piano_id = p_piano
+    and ps.cancelled_at is null
+    and ps.starts_at + (ps.duration_min || ' minutes')::interval > now()
+    and p.banned_at is null
+    and (
+      ps.visibility = 'public'
+      or ps.user_id = auth.uid()
+      or public.is_admin()
+      or (auth.uid() is not null and exists(
+        select 1 from public.friendships f
+        where f.status = 'accepted'
+          and f.user_a = least(auth.uid(), ps.user_id)
+          and f.user_b = greatest(auth.uid(), ps.user_id)
+      ))
+    )
+  order by ps.starts_at asc
+  limit 50;
+$$;
+
+revoke all on function public.list_piano_presence(uuid) from public;
+grant execute on function public.list_piano_presence(uuid) to anon, authenticated;
 
 -- ============================
 -- 12. Bootstrap superadmin (idempotent — à ré-exécuter après le 1er signup)

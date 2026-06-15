@@ -16,6 +16,9 @@ export type NotificationKind =
   | 'session_conflict'
   | 'request_reply'
   | 'event_created'
+  | 'friend_arriving'
+  | 'friend_request_received'
+  | 'friend_request_accepted'
 
 export type OutboxPayload = Record<string, unknown>
 
@@ -203,6 +206,77 @@ export function renderMail(
         html: shell(subject, body, { label: "Voir et m'inscrire", url }),
         pushTitle: sanitizeHeader('Nouvel évènement 🎵'),
         pushBody: sanitizeHeader(payload.title)
+      }
+    }
+    case 'friend_arriving': {
+      const senderPseudo = String(payload.sender_pseudo ?? '?')
+      const pianoAddress = String(payload.piano_address ?? '?')
+      const pianoId = String(payload.piano_id ?? '')
+      const startsAt = String(payload.starts_at ?? '')
+      const url = `${appUrl}/piano/${encodeURIComponent(pianoId)}#sessions`
+      // Wording dynamique : live vs futur (recalcul à delivery time).
+      const startsMs = Date.parse(startsAt)
+      const durMin = Number(payload.duration_min ?? 0)
+      const nowMs = Date.now()
+      const isLive = !isNaN(startsMs) && startsMs <= nowMs && nowMs <= startsMs + durMin * 60_000
+      const verb = isLive ? 'joue actuellement' : 'va jouer'
+      const subject = sanitizeHeader(`@${senderPseudo} ${verb} au piano de ${pianoAddress}`)
+      const body = `
+        <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
+        <p><strong>@${escapeHtml(senderPseudo)}</strong> ${escapeHtml(verb)} au piano à <strong>${escapeHtml(pianoAddress)}</strong>${
+          !isLive && startsAt ? ` (${escapeHtml(formatDateFr(startsAt))})` : ''
+        }.</p>
+        <p>Tu veux venir l'écouter ou le rejoindre ?</p>
+      `
+      return {
+        subject,
+        url,
+        html: shell(subject, body, { label: 'Voir le piano', url }),
+        pushTitle: sanitizeHeader(`@${senderPseudo} ${verb} 🎹`),
+        pushBody: sanitizeHeader(pianoAddress)
+      }
+    }
+    case 'friend_request_received': {
+      const requesterPseudo = String(payload.requester_pseudo ?? '?')
+      const url = `${appUrl}/dashboard?tab=friends`
+      const subject = sanitizeHeader(`@${requesterPseudo} veut être ton ami sur PianoWorld`)
+      const body = `
+        <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
+        <p><strong>@${escapeHtml(requesterPseudo)}</strong> souhaite t'ajouter comme ami.</p>
+        <p>Si vous êtes amis, tu pourras voir ses sessions privées et il pourra voir les tiennes (si tu les marques "amis uniquement").</p>
+      `
+      return {
+        subject,
+        url,
+        html: shell(subject, body, { label: 'Voir la demande', url }),
+        pushTitle: sanitizeHeader(`@${requesterPseudo} t'envoie une demande d'ami`),
+        pushBody: sanitizeHeader('Réponds depuis ton dashboard')
+      }
+    }
+    case 'friend_request_accepted': {
+      const otherPseudo = String(payload.other_pseudo ?? '?')
+      const autoAccepted = payload.auto_accepted === true
+      const url = `${appUrl}/user/${encodeURIComponent(otherPseudo)}`
+      const subject = autoAccepted
+        ? sanitizeHeader(`@${otherPseudo} et toi êtes maintenant amis !`)
+        : sanitizeHeader(`@${otherPseudo} a accepté ta demande d'ami`)
+      const body = autoAccepted
+        ? `
+        <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
+        <p>Vous avez tous les deux voulu vous ajouter en même temps avec <strong>@${escapeHtml(otherPseudo)}</strong> — vous êtes maintenant amis ! 🎉</p>
+      `
+        : `
+        <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
+        <p><strong>@${escapeHtml(otherPseudo)}</strong> a accepté ta demande d'ami. Vous pouvez maintenant voir vos sessions friends-only respectives.</p>
+      `
+      return {
+        subject,
+        url,
+        html: shell(subject, body, { label: 'Voir son profil', url }),
+        pushTitle: sanitizeHeader(
+          autoAccepted ? `Vous êtes maintenant amis 🎉` : `@${otherPseudo} a accepté ta demande`
+        ),
+        pushBody: sanitizeHeader(otherPseudo)
       }
     }
   }
