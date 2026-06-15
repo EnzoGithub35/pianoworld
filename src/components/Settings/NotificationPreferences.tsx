@@ -7,7 +7,13 @@ import { useNotificationPreferences } from '@/hooks/useNotificationPreferences'
 import { useAuth } from '@/contexts/AuthContext'
 import { pushSupported, subscribeToPush, unsubscribeFromPush } from '@/lib/web-push'
 import { logger } from '@/lib/logger'
-import { NOTIFICATION_CATEGORIES, NOTIFICATION_LABELS } from '@/lib/constants'
+import {
+  NOTIFICATION_CATEGORIES,
+  NOTIFICATION_LABELS,
+  NOTIFICATION_SECTION_OF,
+  NOTIFICATION_SECTION_LABELS,
+  type NotificationSection
+} from '@/lib/constants'
 
 /**
  * Préférences notifications affichées dans SettingsPage. Deux blocs :
@@ -67,16 +73,34 @@ export function NotificationPreferences() {
     }
   }
 
+  // Regroupement visuel des toggles par section (Pianos / Sessions / Communauté / Amis).
+  // Préserve l'ordre de NOTIFICATION_CATEGORIES ; chaque section apparaît dans
+  // l'ordre du premier toggle qui l'introduit.
+  const sectionsInOrder: NotificationSection[] = []
+  for (const cat of NOTIFICATION_CATEGORIES) {
+    const sec = NOTIFICATION_SECTION_OF[cat]
+    if (!sectionsInOrder.includes(sec)) sectionsInOrder.push(sec)
+  }
+
   return (
     <div className="overflow-hidden">
-      {NOTIFICATION_CATEGORIES.map((cat) => (
-        <Switch
-          key={cat}
-          id={`notif-${cat}`}
-          label={NOTIFICATION_LABELS[cat]}
-          checked={preferences[cat]}
-          onCheckedChange={(next) => update({ [cat]: next })}
-        />
+      {sectionsInOrder.map((sec) => (
+        <div key={sec}>
+          <div className="border-t border-border bg-muted/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground first:border-t-0">
+            {NOTIFICATION_SECTION_LABELS[sec]}
+          </div>
+          {NOTIFICATION_CATEGORIES.filter(
+            (cat) => NOTIFICATION_SECTION_OF[cat] === sec
+          ).map((cat) => (
+            <Switch
+              key={cat}
+              id={`notif-${cat}`}
+              label={NOTIFICATION_LABELS[cat]}
+              checked={preferences[cat]}
+              onCheckedChange={(next) => update({ [cat]: next })}
+            />
+          ))}
+        </div>
       ))}
       <div className="border-t border-border bg-muted/30">
         <Switch

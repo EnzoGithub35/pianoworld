@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react'
 import { MapContainer, Marker, Popup, TileLayer } from 'react-leaflet'
 import MarkerClusterGroup from 'react-leaflet-cluster'
 import { Link } from 'react-router-dom'
-import { Filter as FilterIcon } from 'lucide-react'
+import { Filter as FilterIcon, Music } from 'lucide-react'
 import 'leaflet/dist/leaflet.css'
 import { useTheme } from '@/contexts/ThemeContext'
 import { usePianos, type PianoWithAuthor } from '@/hooks/usePianos'
-import { useActivePianoIds } from '@/hooks/usePianoSessions'
+import { usePianoActiveCounts } from '@/hooks/usePianoPresence'
 import { createPianoIcon } from './PianoMarker'
 import { QualityBadge } from '@/components/Piano/QualityBadge'
 import { LocateMeButton } from './LocateMeButton'
@@ -36,7 +36,13 @@ const DARK_TILES = {
 const ERROR_TILE =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
-function PianoPopup({ piano }: { piano: PianoWithAuthor }) {
+function PianoPopup({
+  piano,
+  activeCount
+}: {
+  piano: PianoWithAuthor
+  activeCount: number
+}) {
   return (
     <div className="min-w-[200px] space-y-2">
       {piano.photo_url && (
@@ -52,6 +58,15 @@ function PianoPopup({ piano }: { piano: PianoWithAuthor }) {
         <QualityBadge quality={piano.quality} />
       </div>
       <p className="text-sm">{piano.comment}</p>
+      {activeCount > 0 && (
+        <Link
+          to={`/piano/${piano.id}#sessions`}
+          className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20"
+        >
+          <Music className="h-3 w-3" />
+          {activeCount} session{activeCount > 1 ? 's' : ''} en cours
+        </Link>
+      )}
       <p className="text-xs text-muted-foreground">
         Ajouté par{' '}
         {piano.author?.pseudo ? (
@@ -93,7 +108,6 @@ function applyFilters(
 export function PianoMap() {
   const { theme } = useTheme()
   const { data: pianos } = usePianos()
-  const { data: activeIds } = useActivePianoIds()
   const [filters, setFilters] = useState<MapFiltersValue>(DEFAULT_FILTERS)
   const tiles = theme === 'dark' ? DARK_TILES : LIGHT_TILES
 
@@ -102,10 +116,19 @@ export function PianoMap() {
     [pianos, filters]
   )
 
+  // Batch RPC v6 : 1 query/30s pour tous les pianos visibles. Remplace l'ancien
+  // useActivePianoIds (qui faisait un SELECT direct sur piano_sessions, lequel
+  // est maintenant filtré par RLS visibility-aware → leaks count vs anon).
+  // get_active_piano_counts bypass la RLS via SECURITY DEFINER mais applique
+  // le MÊME filtre visibility côté SQL → pas de delta cardinalité.
+  const pianoIds = useMemo(() => filtered.map((p) => p.id), [filtered])
+  const { data: countsMap } = usePianoActiveCounts(pianoIds)
+
   const markers = useMemo(
     () =>
       filtered.map((p) => {
-        const isActive = activeIds?.has(p.id) ?? false
+        const activeCount = countsMap?.get(p.id) ?? 0
+        const isActive = activeCount > 0
         // La key inclut tout ce qui modifie le rendu visuel du divIcon
         // (quality → couleur de bordure, photo_url → fond image vs icône).
         // Sans ça, après edit d'un piano, react-leaflet réutilise le même
@@ -123,12 +146,12 @@ export function PianoMap() {
             opacity={p.still_there ? 1 : 0.5}
           >
             <Popup>
-              <PianoPopup piano={p} />
+              <PianoPopup piano={p} activeCount={activeCount} />
             </Popup>
           </Marker>
         )
       }),
-    [filtered, activeIds]
+    [filtered, countsMap]
   )
 
   return (

@@ -5,6 +5,7 @@ import { QualityBadge } from '@/components/Piano/QualityBadge'
 import { Avatar } from '@/components/ui/Avatar'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { AddFriendButton } from '@/components/Friends/AddFriendButton'
 import { fromNow } from '@/lib/date'
 
 export function UserPage() {
@@ -49,10 +50,12 @@ export function UserPage() {
       </header>
 
       <div className="space-y-6 p-4 pb-24">
-        <section className="flex items-center gap-4">
+        <section className="flex items-start gap-4">
           <Avatar pseudo={profile.pseudo} size="xl" />
-          <div>
-            <p className="font-display text-2xl font-bold tracking-tight">@{profile.pseudo}</p>
+          <div className="min-w-0 flex-1">
+            <p className="font-display text-2xl font-bold tracking-tight">
+              @{profile.pseudo}
+            </p>
             <p className="text-xs text-muted-foreground">
               Inscrit {fromNow(profile.created_at)}
             </p>
@@ -60,6 +63,9 @@ export function UserPage() {
               {count} piano{count > 1 ? 's' : ''} ajouté{count > 1 ? 's' : ''}
             </p>
           </div>
+        </section>
+        <section>
+          <AddFriendButton targetUserId={profile.id} targetPseudo={profile.pseudo} />
         </section>
 
         <section className="space-y-3">

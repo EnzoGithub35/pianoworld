@@ -94,7 +94,11 @@ export const NOTIFICATION_CATEGORIES = [
   'notify_piano_updates',
   'notify_session_conflict',
   'notify_request_reply',
-  'notify_events'
+  'notify_events',
+  // v6 — système d'amitié
+  'notify_friend_arriving',
+  'notify_friend_request_received',
+  'notify_friend_request_accepted'
 ] as const
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]
 
@@ -104,7 +108,31 @@ export const NOTIFICATION_LABELS: Record<NotificationCategory, string> = {
   notify_piano_updates: 'Mise à jour d’état d’un de mes pianos',
   notify_session_conflict: 'Quelqu’un joue au même moment que moi',
   notify_request_reply: 'Réponse à mes demandes',
-  notify_events: 'Nouveaux évènements'
+  notify_events: 'Nouveaux évènements',
+  notify_friend_arriving: 'Un ami arrive sur un piano',
+  notify_friend_request_received: 'Quelqu’un veut être mon ami',
+  notify_friend_request_accepted: 'Ma demande d’ami a été acceptée'
+}
+
+/** Regroupement visuel des toggles dans la page Settings → Notifications.
+ *  Permet de couper la liste en sections (Pianos, Sessions, Communauté, Amis). */
+export type NotificationSection = 'pianos' | 'sessions' | 'communaute' | 'amis'
+export const NOTIFICATION_SECTION_OF: Record<NotificationCategory, NotificationSection> =
+  {
+    notify_comments: 'pianos',
+    notify_piano_updates: 'pianos',
+    notify_session_conflict: 'sessions',
+    notify_events: 'communaute',
+    notify_request_reply: 'communaute',
+    notify_friend_arriving: 'amis',
+    notify_friend_request_received: 'amis',
+    notify_friend_request_accepted: 'amis'
+  }
+export const NOTIFICATION_SECTION_LABELS: Record<NotificationSection, string> = {
+  pianos: 'Mes pianos',
+  sessions: 'Sessions de piano',
+  communaute: 'Communauté',
+  amis: 'Amis'
 }
 
 /** Cookie de consentement (bandeau RGPD). */
@@ -124,7 +152,31 @@ export const RATE_LIMITS: Record<string, { count: number; windowLabel: string }>
   piano_visit: { count: 50, windowLabel: '24 h' },
   piano_session: { count: 10, windowLabel: '24 h' },
   piano_report: { count: 5, windowLabel: '24 h' },
-  user_request: { count: 5, windowLabel: '7 jours' }
+  user_request: { count: 5, windowLabel: '7 jours' },
+  friend_request: { count: 20, windowLabel: '24 h' }
+}
+
+/* ===========================================================
+ * v6 — Système d'amitié + visibility sessions + compteur présence
+ * =========================================================== */
+
+/** Pagination liste amis dans FriendsTab (LIMIT côté SQL = 500). */
+export const FRIENDS_DISPLAY_LIMIT = 200
+
+/** Max d'avatars empilés dans PianoPresenceCounter avant le "+N". */
+export const PRESENCE_AVATAR_STACK_LIMIT = 5
+
+/** Refresh du compteur de présence (sessions actives expirent en continu). */
+export const PRESENCE_STALE_MS = 30_000
+
+/** Visibilité d'une session piano. Mirror SQL CHECK piano_sessions.visibility. */
+export const SESSION_VISIBILITIES = ['public', 'friends'] as const
+export const SESSION_VISIBILITY_LABELS: Record<
+  (typeof SESSION_VISIBILITIES)[number],
+  string
+> = {
+  public: 'Tout le monde',
+  friends: 'Mes amis uniquement'
 }
 
 /** Onglet "Communauté" : combien de jours dans le passé / futur sont affichés. */

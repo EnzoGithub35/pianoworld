@@ -2469,6 +2469,541 @@ revoke all on function public.list_piano_presence(uuid) from public;
 grant execute on function public.list_piano_presence(uuid) to anon, authenticated;
 
 -- ============================
+-- 15. v7 — Recherche unifiée (users + pianos) + Pianos favoris + 5e icône NavBar
+-- ============================
+--
+-- ATTENTION exécution Supabase SQL Editor : aucune contrainte (CREATE EXTENSION,
+-- ALTER TYPE, ALTER TABLE sont en mode auto-commit). Si on rejoue ce fichier
+-- via `psql -1`, il faudra extraire la ligne `alter type notification_kind
+-- add value 'piano_favorite_update'` et la commit séparément (restriction PG).
+--
+-- Privacy-first :
+--  - first_name / last_name sont OPT-IN (default NULL, user les fournit dans
+--    Settings). Column-level grants EXCLUS pour anon+authenticated → invisibles
+--    via PostgREST direct. Accès uniquement via RPCs SECURITY DEFINER.
+--  - find_user_by_email : exact-match strict + rate-limit dur 5/24h
+--    (anti account-enumeration). Pas d'audit log (ne pas créer un registre).
+--  - piano_favorites : self-only RLS classique.
+
+-- 15.a Extensions full-text (idempotent)
+create extension if not exists pg_trgm;
+create extension if not exists unaccent;
+
+-- 15.b Profiles : 2 colonnes opt-in (RGPD : default NULL, user-supplied)
+alter table public.profiles
+  add column if not exists first_name text
+    check (first_name is null or char_length(trim(first_name)) between 1 and 50),
+  add column if not exists last_name  text
+    check (last_name  is null or char_length(trim(last_name))  between 1 and 50);
+
+-- IMPORTANT : ne PAS étendre les column-grants sur first_name / last_name.
+-- Le grant ligne 1016 reste `grant select (id, pseudo, created_at)` → ces 2
+-- nouvelles colonnes sont invisibles via PostgREST direct (`?select=*` erreur 403).
+-- Lecture autorisée uniquement via RPCs `search_users`, `find_user_by_email`,
+-- `get_my_profile` (toutes SECURITY DEFINER).
+
+-- 15.c Indexes trigram pour recherche fuzzy + accent-insensitive
+-- unaccent() est IMMUTABLE seulement avec l'extension installée ; on l'utilise
+-- via la fonction `public.unaccent_immutable` pour permettre index expression.
+create or replace function public.unaccent_immutable(text)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = public, extensions
+as $$ select public.unaccent('public.unaccent', $1) $$;
+
+create index if not exists profiles_pseudo_trgm_idx
+  on public.profiles using gin (lower(public.unaccent_immutable(pseudo)) gin_trgm_ops);
+create index if not exists profiles_first_name_trgm_idx
+  on public.profiles using gin (lower(public.unaccent_immutable(first_name)) gin_trgm_ops)
+  where first_name is not null;
+create index if not exists profiles_last_name_trgm_idx
+  on public.profiles using gin (lower(public.unaccent_immutable(last_name)) gin_trgm_ops)
+  where last_name is not null;
+create index if not exists pianos_address_trgm_idx
+  on public.pianos using gin (lower(public.unaccent_immutable(address)) gin_trgm_ops)
+  where is_deleted = false;
+create index if not exists pianos_comment_trgm_idx
+  on public.pianos using gin (lower(public.unaccent_immutable(comment)) gin_trgm_ops)
+  where is_deleted = false;
+
+-- 15.d Table piano_favorites : toggle user × piano + lookup rapide par user
+create table if not exists public.piano_favorites (
+  piano_id   uuid not null references public.pianos(id) on delete cascade,
+  user_id    uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (piano_id, user_id)
+);
+create index if not exists piano_favorites_user_idx
+  on public.piano_favorites(user_id, created_at desc);
+create index if not exists piano_favorites_piano_idx
+  on public.piano_favorites(piano_id);
+
+alter table public.piano_favorites enable row level security;
+
+drop policy if exists piano_favorites_select_self on public.piano_favorites;
+create policy piano_favorites_select_self on public.piano_favorites
+  for select using (auth.uid() = user_id);
+
+drop policy if exists piano_favorites_insert_self on public.piano_favorites;
+create policy piano_favorites_insert_self on public.piano_favorites
+  for insert with check (auth.uid() = user_id and not public.is_banned(auth.uid()));
+
+drop policy if exists piano_favorites_delete_self on public.piano_favorites;
+create policy piano_favorites_delete_self on public.piano_favorites
+  for delete using (auth.uid() = user_id);
+
+-- 15.e Notif kind + préférence (`alter type` doit être commit avant utilisation
+-- downstream — ok en Supabase SQL Editor, à isoler si psql -1)
+alter type notification_kind add value if not exists 'piano_favorite_update';
+alter table public.notification_preferences
+  add column if not exists notify_favorite_update boolean not null default true;
+
+-- 15.f Trigger : MAJ piano → queue notifs aux favoriters (excluant l'updater
+-- + filtrant banned + filtrant pref désactivée)
+-- Snapshot `piano_address` + `updater_pseudo` dans le payload pour survivre
+-- aux suppressions de compte (cohérent avec pattern v6 friend_arriving).
+create or replace function public.queue_favorite_update_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.notifications_outbox (recipient_id, kind, payload)
+  select
+    pf.user_id,
+    'piano_favorite_update',
+    jsonb_build_object(
+      'piano_id', new.piano_id,
+      'piano_address', (select address from public.pianos where id = new.piano_id),
+      'update_id', new.id,
+      'updater_user_id', new.updated_by,
+      'updater_pseudo', upd.pseudo,
+      'quality', new.quality,
+      'still_there', new.still_there
+    )
+  from public.piano_favorites pf
+  join public.profiles recipient on recipient.id = pf.user_id
+  join public.notification_preferences np on np.user_id = pf.user_id
+  left join public.profiles upd on upd.id = new.updated_by
+  where pf.piano_id = new.piano_id
+    and pf.user_id <> coalesce(new.updated_by, '00000000-0000-0000-0000-000000000000'::uuid)
+    and recipient.banned_at is null
+    and np.notify_favorite_update = true;
+  return new;
+end$$;
+
+revoke all on function public.queue_favorite_update_notification() from public;
+
+drop trigger if exists piano_updates_queue_favorite_notif on public.piano_updates;
+create trigger piano_updates_queue_favorite_notif
+  after insert on public.piano_updates
+  for each row execute function public.queue_favorite_update_notification();
+
+-- 15.g Helper rate-limit pour RPC bodies (équivalent enforce_rate_limit mais
+-- appelable hors trigger). Utilisé par find_user_by_email pour bloquer
+-- l'énumération email-based. Reproduit la logique exacte : advisory lock par
+-- (uid, action) + UPSERT atomique dans rate_limit_buckets + raise si dépassé.
+create or replace function public.enforce_caller_rate_limit(
+  p_action text,
+  p_max    int,
+  p_window interval
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid    uuid := auth.uid();
+  v_bucket timestamptz;
+  v_total  int;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(v_uid::text || ':' || p_action));
+
+  v_bucket := date_trunc('minute', now());
+
+  insert into public.rate_limit_buckets(user_id, action, window_start, count)
+  values (v_uid, p_action, v_bucket, 1)
+  on conflict (user_id, action, window_start)
+  do update set count = public.rate_limit_buckets.count + 1;
+
+  select coalesce(sum(count), 0) into v_total
+  from public.rate_limit_buckets
+  where user_id = v_uid
+    and action = p_action
+    and window_start >= now() - p_window;
+
+  if v_total > p_max then
+    raise exception 'rate_limit_exceeded'
+      using errcode = 'P0001', hint = p_action;
+  end if;
+end$$;
+
+revoke all on function public.enforce_caller_rate_limit(text, int, interval) from public;
+grant execute on function public.enforce_caller_rate_limit(text, int, interval) to authenticated;
+
+-- 15.h RPCs SECURITY DEFINER
+
+-- 15.h.1 search_users : recherche unifiée pseudo + first_name + last_name
+-- via pg_trgm similarity (accent-insensitive). Filtre banned. LIMIT 20.
+-- Pas de rate-limit (search par texte = usage légitime, pseudo public par design).
+create or replace function public.search_users(q text)
+returns table(
+  id uuid,
+  pseudo text,
+  first_name text,
+  last_name text,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_q text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  v_q := trim(coalesce(q, ''));
+  if char_length(v_q) < 2 or char_length(v_q) > 50 then
+    return; -- empty result
+  end if;
+  v_q := lower(public.unaccent_immutable(v_q));
+
+  return query
+    with scored as (
+      select
+        p.id, p.pseudo, p.first_name, p.last_name, p.created_at,
+        greatest(
+          similarity(lower(public.unaccent_immutable(p.pseudo)), v_q),
+          coalesce(similarity(lower(public.unaccent_immutable(p.first_name)), v_q), 0),
+          coalesce(similarity(lower(public.unaccent_immutable(p.last_name)), v_q), 0)
+        ) as score
+      from public.profiles p
+      where p.banned_at is null
+        and (
+          lower(public.unaccent_immutable(p.pseudo)) like '%' || v_q || '%'
+          or (p.first_name is not null and lower(public.unaccent_immutable(p.first_name)) like '%' || v_q || '%')
+          or (p.last_name  is not null and lower(public.unaccent_immutable(p.last_name))  like '%' || v_q || '%')
+        )
+    )
+    select s.id, s.pseudo, s.first_name, s.last_name, s.created_at
+    from scored s
+    where s.score > 0.1
+    order by s.score desc, s.pseudo asc
+    limit 20;
+end$$;
+
+revoke all on function public.search_users(text) from public;
+grant execute on function public.search_users(text) to authenticated;
+
+-- 15.h.2 find_user_by_email : exact-match strict + rate-limit 5/24h.
+-- Réponse minimale : retourne profile fields, jamais l'email (le caller le
+-- connaît déjà). 0 row si non trouvé ou banned (pas de leak d'existence).
+create or replace function public.find_user_by_email(p_email text)
+returns table(
+  id uuid,
+  pseudo text,
+  first_name text,
+  last_name text,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+stable
+set search_path = public, auth
+as $$
+declare
+  v_email text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  v_email := lower(trim(coalesce(p_email, '')));
+  if char_length(v_email) < 3 or char_length(v_email) > 254 or position('@' in v_email) = 0 then
+    return;
+  end if;
+
+  -- Rate-limit AVANT la query pour bloquer même les tentatives malformées.
+  perform public.enforce_caller_rate_limit('user_search_email', 5, '24 hours'::interval);
+
+  return query
+    select p.id, p.pseudo, p.first_name, p.last_name, p.created_at
+    from auth.users u
+    join public.profiles p on p.id = u.id
+    where lower(u.email) = v_email
+      and p.banned_at is null
+    limit 1;
+end$$;
+
+revoke all on function public.find_user_by_email(text) from public;
+grant execute on function public.find_user_by_email(text) to authenticated;
+
+-- 15.h.3 search_pianos : full-text fuzzy sur address + comment.
+-- Auth required (anti-scraping), filtre is_deleted = false. LIMIT 30.
+create or replace function public.search_pianos(q text)
+returns table(
+  id uuid,
+  address text,
+  comment text,
+  quality piano_quality,
+  photo_url text,
+  lat double precision,
+  lng double precision,
+  created_by uuid,
+  author_pseudo text,
+  created_at timestamptz
+)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+declare
+  v_q text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  v_q := trim(coalesce(q, ''));
+  if char_length(v_q) < 2 or char_length(v_q) > 100 then
+    return;
+  end if;
+  v_q := lower(public.unaccent_immutable(v_q));
+
+  return query
+    with scored as (
+      select
+        pn.id, pn.address, pn.comment, pn.quality, pn.photo_url,
+        pn.lat, pn.lng, pn.created_by, prof.pseudo as author_pseudo, pn.created_at,
+        greatest(
+          similarity(lower(public.unaccent_immutable(pn.address)), v_q),
+          similarity(lower(public.unaccent_immutable(pn.comment)), v_q)
+        ) as score
+      from public.pianos pn
+      left join public.profiles prof on prof.id = pn.created_by
+      where pn.is_deleted = false
+        and (
+          lower(public.unaccent_immutable(pn.address)) like '%' || v_q || '%'
+          or lower(public.unaccent_immutable(pn.comment)) like '%' || v_q || '%'
+        )
+    )
+    select s.id, s.address, s.comment, s.quality, s.photo_url,
+           s.lat, s.lng, s.created_by, s.author_pseudo, s.created_at
+    from scored s
+    where s.score > 0.1
+    order by s.score desc, s.created_at desc
+    limit 30;
+end$$;
+
+revoke all on function public.search_pianos(text) from public;
+grant execute on function public.search_pianos(text) to authenticated;
+
+-- 15.h.4 update_my_profile_names : self-update opt-in. NULL ou string vide = clear.
+create or replace function public.update_my_profile_names(
+  p_first text,
+  p_last  text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_first text;
+  v_last  text;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  v_first := nullif(trim(coalesce(p_first, '')), '');
+  v_last  := nullif(trim(coalesce(p_last,  '')), '');
+  if v_first is not null and char_length(v_first) > 50 then
+    raise exception 'first_name too long';
+  end if;
+  if v_last is not null and char_length(v_last) > 50 then
+    raise exception 'last_name too long';
+  end if;
+  update public.profiles
+  set first_name = v_first,
+      last_name  = v_last
+  where id = auth.uid();
+end$$;
+
+revoke all on function public.update_my_profile_names(text, text) from public;
+grant execute on function public.update_my_profile_names(text, text) to authenticated;
+
+-- 15.h.5 toggle_piano_favorite : idempotent, advisory_xact_lock anti double-click.
+-- Returns true si maintenant favori, false si retiré.
+create or replace function public.toggle_piano_favorite(p_piano uuid)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid     uuid := auth.uid();
+  v_exists  boolean;
+  v_piano_ok boolean;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  if public.is_banned(v_uid) then
+    raise exception 'banned';
+  end if;
+
+  perform pg_advisory_xact_lock(hashtext(v_uid::text || ':fav:' || p_piano::text));
+
+  select exists(
+    select 1 from public.pianos where id = p_piano and is_deleted = false
+  ) into v_piano_ok;
+  if not v_piano_ok then
+    raise exception 'piano_not_found';
+  end if;
+
+  select exists(
+    select 1 from public.piano_favorites
+    where piano_id = p_piano and user_id = v_uid
+  ) into v_exists;
+
+  if v_exists then
+    delete from public.piano_favorites
+    where piano_id = p_piano and user_id = v_uid;
+    return false;
+  else
+    insert into public.piano_favorites(piano_id, user_id)
+    values (p_piano, v_uid);
+    return true;
+  end if;
+end$$;
+
+revoke all on function public.toggle_piano_favorite(uuid) from public;
+grant execute on function public.toggle_piano_favorite(uuid) to authenticated;
+
+-- 15.h.6 get_my_favorites : liste enrichie pour Dashboard Favoris tab.
+create or replace function public.get_my_favorites()
+returns table(
+  piano_id uuid,
+  address text,
+  quality piano_quality,
+  photo_url text,
+  lat double precision,
+  lng double precision,
+  favorited_at timestamptz,
+  last_update_at timestamptz
+)
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select
+    pf.piano_id,
+    p.address,
+    p.quality,
+    p.photo_url,
+    p.lat,
+    p.lng,
+    pf.created_at as favorited_at,
+    (select max(pu.updated_at) from public.piano_updates pu where pu.piano_id = pf.piano_id) as last_update_at
+  from public.piano_favorites pf
+  join public.pianos p on p.id = pf.piano_id
+  where pf.user_id = auth.uid()
+    and p.is_deleted = false
+  order by pf.created_at desc
+  limit 200;
+$$;
+
+revoke all on function public.get_my_favorites() from public;
+grant execute on function public.get_my_favorites() to authenticated;
+
+-- 15.i export_my_data : étendu pour piano_favorites + friendships (RGPD complet)
+-- Note : profile.first_name / last_name sont DÉJÀ inclus via to_jsonb(p) — pas de change ici.
+create or replace function public.export_my_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, auth
+as $$
+declare
+  v_uid    uuid := auth.uid();
+  v_email  text;
+  v_result jsonb;
+begin
+  if v_uid is null then
+    raise exception 'not authenticated';
+  end if;
+  select email into v_email from auth.users where id = v_uid;
+
+  v_result := jsonb_build_object(
+    'exported_at', now(),
+    'user', jsonb_build_object('id', v_uid, 'email', v_email),
+    'profile', (
+      select to_jsonb(p) from public.profiles p where p.id = v_uid
+    ),
+    'pianos', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.pianos t where t.created_by = v_uid
+    ), '[]'::jsonb),
+    'piano_updates', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_updates t where t.updated_by = v_uid
+    ), '[]'::jsonb),
+    'piano_reports', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_reports t where t.reported_by = v_uid
+    ), '[]'::jsonb),
+    'piano_visits', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_visits t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'piano_sessions', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_sessions t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'piano_favorites', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.piano_favorites t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'friendships', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'id', f.id,
+        'other_user_id', case when f.user_a = v_uid then f.user_b else f.user_a end,
+        'requester_id', f.requester_id,
+        'status', f.status,
+        'created_at', f.created_at,
+        'responded_at', f.responded_at
+      )) from public.friendships f where v_uid in (f.user_a, f.user_b)
+    ), '[]'::jsonb),
+    'event_participants', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.event_participants t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'user_requests', coalesce((
+      select jsonb_agg(to_jsonb(t)) from public.user_requests t where t.user_id = v_uid
+    ), '[]'::jsonb),
+    'notification_preferences', (
+      select to_jsonb(t) from public.notification_preferences t where t.user_id = v_uid
+    ),
+    'push_subscriptions', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'endpoint', endpoint,
+        'user_agent', user_agent,
+        'created_at', created_at,
+        'last_used_at', last_used_at
+      )) from public.push_subscriptions t where t.user_id = v_uid
+    ), '[]'::jsonb)
+  );
+  return v_result;
+end$$;
+
+revoke all on function public.export_my_data() from public;
+grant execute on function public.export_my_data() to authenticated;
+
+-- ============================
 -- 12. Bootstrap superadmin (idempotent — à ré-exécuter après le 1er signup)
 -- ============================
 update public.profiles
