@@ -364,6 +364,24 @@ Pre-commit hook lance automatiquement `lint-staged` (eslint --fix + prettier --w
 
 ---
 
+## Skills Claude Code
+
+Skills custom du projet, dans `.claude/skills/` (committés, versionnés). Invocables via `/<nom>` ou auto-déclenchés sur les phrases indiquées.
+
+| Skill             | Quand l'utiliser                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `/quality-check`  | Gate locale rapide : typecheck → lint → tests → build, stop au 1er échec. Avant un commit/push.                              |
+| `/ship-it`        | Pré-déploiement (Workflow multi-agents) : qualité + sécurité → verdict GO/NO-GO. Avant une PR/merge. ⚠️ facturé.             |
+| `/security-audit` | Audit sécurité multi-axes (RLS, RPCs, frontend, Edge, CSP, RGPD) via Workflow. Arg optionnel pour cibler un axe. ⚠️ facturé. |
+| `/rpc-create`     | Scaffolde une RPC `SECURITY DEFINER` conforme (search_path, garde, re-auth, audit_log, grants) + rappel snapshot.            |
+| `/design-review`  | Revue design/UX d'une page/composant vs design system "Bois de piano" (tokens, primitives, mobile-first).                    |
+| `/a11y-audit`     | Audit accessibilité (erreur↔champ, clavier/Tabs, aria-label, focus, contraste). Cible les gaps connus.                       |
+| `/feature-slice`  | Ajout d'une feature data end-to-end : table + RLS + zod + type + constantes + hook + snapshot (+ notifs).                    |
+
+`ship-it` et `security-audit` lancent le tool Workflow (multi-agents, facturé) : ne les exécuter que sur demande explicite.
+
+---
+
 ## Setup local (premier checkout)
 
 1. `npm install --legacy-peer-deps`
