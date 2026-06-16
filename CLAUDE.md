@@ -2,7 +2,24 @@
 
 Carte interactive et communautaire des pianos publics. Stack React + Vite + Supabase + Leaflet, 100% gratuit à héberger, mobile-first, PWA installable. Démarrage focalisé sur Rennes mais carte ouverte partout.
 
-État actuel : **v5** (notifications, communauté, audit log, RGPD complet, sécurité durcie). Cf. section "Statut" en bas + [BRANCHING.md](BRANCHING.md) + [docs/FONCTIONNALITES.md](docs/FONCTIONNALITES.md).
+État actuel : **v7 en cours**. v1→v5 livrées (notifications, communauté, audit log, RGPD complet, sécurité durcie). v6 livrée (système d'amitié bidirectionnel + visibility sessions friends/public + compteur présence). **PR-A v7 backend** livrée (recherche unifiée users/pianos via pg_trgm + first_name/last_name opt-in + pianos favoris + notif `piano_favorite_update`). **PR-B v7 frontend à venir** (SearchTabs + FavoriteButton + FavoritesTab + NavBar 5e icône Amis + EditNamesDialog).
+
+---
+
+## Documentation
+
+Ce fichier est l'**entry point** : conventions clés, gotchas, où trouver quoi. Pour les détails, voir :
+
+| Sujet                                                                          | Document                                           |
+| ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Architecture frontend + backend, patterns React Query, structure de schema.sql | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)       |
+| Modèle de sécurité (RLS, column grants, advisory locks, audit log, RGPD)       | [docs/SECURITY.md](docs/SECURITY.md)               |
+| Catalogue exhaustif des RPCs SECURITY DEFINER                                  | [docs/RPCS.md](docs/RPCS.md)                       |
+| Système de notifications (outbox + Edge Function + templates + push)           | [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)     |
+| Conventions code (logger, errors, schemas, tests, lint, prettier, commits)     | [docs/CONVENTIONS.md](docs/CONVENTIONS.md)         |
+| Setup local + CI/CD + Vercel + Edge Function deploy + pg_cron                  | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)         |
+| Référence détaillée des features par version                                   | [docs/FONCTIONNALITES.md](docs/FONCTIONNALITES.md) |
+| Stratégie de branche solo + conventional commits                               | [BRANCHING.md](BRANCHING.md)                       |
 
 ---
 
@@ -16,14 +33,15 @@ Carte interactive et communautaire des pianos publics. Stack React + Vite + Supa
 | Carte                 | Leaflet + react-leaflet + OSM tiles (light) / CARTO (dark) | Gratuit illimité                                       |
 | Clustering            | react-leaflet-cluster                                      | Lisibilité quand >20 markers                           |
 | Géocodage             | Photon (autocomplete) + Nominatim (reverse)                | Photon pas de rate-limit, Nominatim limité à 1 req/sec |
-| Backend               | Supabase (free tier)                                       | PostgreSQL + Auth + Storage + RLS + Edge Functions     |
-| State serveur         | TanStack Query                                             | Cache, optimistic updates                              |
+| Recherche full-text   | pg_trgm + unaccent (v7)                                    | Index GIN trigram, accent-insensitive, fuzzy           |
+| Backend               | Supabase (free tier, region eu-west-3)                     | PostgreSQL + Auth + Storage + RLS + Edge Functions     |
+| State serveur         | TanStack Query                                             | Cache, optimistic updates, query keys par préfixe      |
 | Routing               | React Router v6 + `React.lazy()`                           | Lazy par page                                          |
 | Forms                 | react-hook-form + zod                                      | Schemas centralisés dans `src/lib/schemas.ts`          |
 | Dates                 | dayjs (locale FR)                                          | Léger, `fromNow()` natif                               |
 | Toasts                | react-hot-toast                                            | Stylé via `main.tsx`                                   |
 | Photos                | browser-image-compression                                  | Client-side, max 200 Ko / 1024px                       |
-| PWA                   | vite-plugin-pwa                                            | Workbox + cache tuiles + Web Push                      |
+| PWA                   | vite-plugin-pwa (Workbox)                                  | StaleWhileRevalidate + cache tuiles + Web Push         |
 | Mails transactionnels | Resend + Supabase Edge Function                            | Free tier 3000/mois, 100/jour                          |
 | Web Push              | web-push + VAPID + Service Worker                          | Notification mobile/desktop opt-in                     |
 | Erreurs prod          | Sentry (`@sentry/react`)                                   | Free tier 5k events/mois + scrubber PII                |
@@ -36,150 +54,7 @@ Carte interactive et communautaire des pianos publics. Stack React + Vite + Supa
 
 ---
 
-## Architecture
-
-```
-src/
-  main.tsx                        # entrée : providers + Toaster + Sentry boundary
-  App.tsx                         # routes lazy + OfflineBanner + RequireAuth + RequireAdmin
-  index.css                       # palette CSS vars + animations + skeleton + pulse-ring
-
-  lib/                            # code pur, sans React
-    supabase.ts                   # client typé. NORMALISE l'URL (strip /rest/v1 + slash)
-    logger.ts                     # logger central : debug/info/warn/error → console + Sentry
-    errors.ts                     # getErrorMessage + isPostgrestError + isUniqueViolation
-                                  # + isPermissionDenied + isRateLimitError + isInvalidPassword
-    constants.ts                  # magic numbers + NOTIFICATION_* + RATE_LIMITS + CGU_VERSION
-    schemas.ts                    # zod : auth + piano + session + event + request + reply
-                                  # + changePasswordSchema + passwordConfirmSchema + acceptCgu
-    geocoding.ts                  # searchAddress (Photon) + reverseGeocode (Nominatim)
-    photo.ts                      # validatePhotoFile + compressPhoto + upload + delete
-    distance.ts                   # haversineMeters
-    date.ts                       # dayjs FR : fromNow, formatDate, formatDateTime
-    utils.ts                      # cn() (clsx + twMerge)
-    sentry.ts                     # init + beforeSend scrubber (email + JWT) + ErrorBoundary
-    web-push.ts                   # subscribeToPush / unsubscribeFromPush / pushSupported
-    session-status.ts             # isSessionActive + sessionRemainingMinutes (pure)
-    __tests__/                    # tests Vitest (distance, errors, schemas, date, web-push,
-                                  # security-snapshot des policies RLS)
-
-  contexts/
-    AuthContext.tsx               # signIn + signUp(needsConfirmation) + signOut + reset
-                                  # + resendConfirmation + isAdmin + isSuperadmin
-                                  # + safety timer 8s + banned auto-logout
-    ThemeContext.tsx              # light/dark, persisté localStorage
-
-  hooks/
-    useAuth.ts                    # re-export du context
-    usePianos.ts                  # liste + still_there calculé depuis updates
-    usePiano.ts                   # détail + usePianoUpdates
-    useUsers.ts                   # search + profile + userPianos → renvoie PublicProfile
-                                  # (id + pseudo + created_at uniquement, RLS column-restricted)
-    useStats.ts                   # nombre total + % en bon état
-    useRecentFeed.ts              # ajouts + MAJ + visits + sessions fusionnés chronologiquement
-    useCommunityFeed.ts           # passages + sessions sur ±14 jours (onglet Communauté)
-    useGeolocation.ts             # navigator.geolocation wrapper
-    useOnline.ts                  # online/offline events
-    usePianoVisits.ts             # passages d'un piano + auteur + dédup
-    usePianoSessions.ts           # sessions d'un piano + classement actif/upcoming/past
-    useActiveSessions.ts          # set d'IDs des sessions actives (pulse carte)
-    useNotificationPreferences.ts # 5 toggles + push_enabled, optimistic + rollback
-    useAdminUsers.ts              # admin_list_users RPC (admin/superadmin gated)
-    useAdminReports.ts            # reports non résolus avec piano joint
-    useAdminKpis.ts               # 10 count queries en parallèle
-    useUserRequests.ts            # useMyRequests (user) + useAdminRequests (admin)
-    useEvents.ts                  # events + participants + my participation
-    useAuditLog.ts                # journal des actions admin avec filtres
-
-  components/
-    ui/                           # Button, Input, Label, Textarea, Dialog, Tabs, Badge,
-                                  # Avatar (hash → couleur HSL), EmptyState, Skeleton, Switch
-    Map/
-      PianoMap.tsx                # carte + clustering + filtres + pulse sur sessions actives
-      PianoMarker.tsx             # divIcon SVG : touches piano ou photo, pulse si isActive
-      MapFilters.tsx              # qualité × présence × date
-      AddPianoFlow.tsx            # modal plein écran : géoloc + drag + photo + doublons
-      LocateMeButton.tsx
-    Piano/
-      PianoActivity.tsx           # section Activité sur PianoPage (passages + sessions)
-      VisitButton.tsx + VisitorStack.tsx
-      SessionButton.tsx + SessionDialog.tsx + SessionList.tsx
-      PianoHistory.tsx            # piano_updates avec auteur + author_pseudo_at_time
-      PianoUpdateForm.tsx
-      EditPianoForm.tsx
-      DeletePianoDialog.tsx
-      QualityBadge.tsx
-      PianoNavigateButton.tsx     # Plans (iOS) ou Google Maps
-      PianoShareButton.tsx        # Web Share API + fallback clipboard
-      PianoReportButton.tsx
-    Auth/
-      LoginForm + SignupForm (avec CGU checkbox + redirect confirm)
-      ForgotPasswordForm + ResetPasswordForm
-      ConfirmPending.tsx          # /auth/confirm-pending avec bouton resend cooldown
-    Settings/
-      EditPseudoDialog + ChangePasswordDialog (verify_my_password RPC)
-      DeleteAccountDialog (double confirm pseudo + password)
-      ExportDataButton (RPC export_my_data complète)
-      NotificationPreferences.tsx # 5 toggles + push opt-in
-    Community/
-      CommunityTab.tsx            # toggle Calendrier / Liste switchable
-    Admin/
-      KpisTab + UsersTab (ban via password dialog) + RolesTab (superadmin only)
-      ReportsTab (force_delete via password dialog) + EventsAdminTab + RequestsAdminTab
-      AuditLogTab.tsx             # journal filtrable des actions admin
-      NewEventDialog + ReplyDialog
-    Requests/
-      MyRequestsTab + NewRequestDialog
-    Events/
-      EventCard + EventsTab
-    Layout/
-      AppShell (Outlet + NavBar + CookieBanner)
-      NavBar + Logo + SplashScreen + OfflineBanner
-      CookieBanner.tsx            # bandeau RGPD essentiels uniquement
-      RequireAdmin.tsx            # guard /admin/*
-    Onboarding/Tutorial.tsx       # 4 slides, persisté localStorage
-
-  pages/                          # toutes lazy via App.tsx
-    AuthPage.tsx                  # routes nested login/signup/forgot/reset/confirm-pending
-    Dashboard.tsx                 # 4 onglets : Activité / Communauté / Évènements / Mes demandes
-    MapPage.tsx                   # PianoMap + bouton "+" + Tutorial
-    SearchPage.tsx                # recherche pseudo (PublicProfile)
-    SettingsPage.tsx              # Compte + Notifications + Apparence + Admin + RGPD + Session
-    UserPage.tsx                  # /user/:pseudo
-    PianoPage.tsx                 # /piano/:id (lecture publique + Activité)
-    LegalPage.tsx                 # 3 onglets : Mentions / Confidentialité / CGU
-    AdminPage.tsx                 # 7 onglets : KPIs / Users / Reports / Events / Requests
-                                  # / Audit / Roles (superadmin)
-
-  test/setup.ts                   # jest-dom matchers + cleanup auto + stub matchMedia
-
-  types/database.ts               # type Database (Supabase) + enums + QUALITY_COLORS/LABELS
-
-supabase/
-  schema.sql                      # 13 sections : tables + RLS + RPCs + triggers + rate limit
-                                  # + audit log + outbox retry + email confirm + RGPD
-  functions/
-    send-notification/            # Edge Function Deno (Resend + web-push)
-      index.ts                    # webhook + re-fetch DB + envoi mail/push + mark sent
-      templates.ts                # 5 templates HTML + sanitizeHeader contre injection
-      README.md                   # setup webhook + secrets
-
-# Racine
-BRANCHING.md                      # stratégie de branche solo + conventional commits
-docs/FONCTIONNALITES.md           # référence des features (toutes versions)
-eslint.config.js                  # flat config v9 + typescript-eslint + react-hooks v7
-commitlint.config.js              # types + subject lowercase + header max 100
-vitest.config.ts                  # env jsdom + seuils coverage src/lib/ 70%
-.husky/{pre-commit, commit-msg}
-.github/workflows/ci.yml          # 3 jobs (quality + build + audit)
-.github/{dependabot.yml, pull_request_template.md}
-.prettierrc.json + .prettierignore
-vercel.json                       # rewrites SPA + CSP + HSTS + COOP/COEP/CORP
-```
-
----
-
-## Conventions
+## Conventions essentielles
 
 ### Logger — toujours via `logger`, jamais `console`
 
@@ -192,9 +67,9 @@ logger.warn('scope.action', 'msg', { ctx }) // console + Sentry warning
 logger.error('scope.action', 'msg', err, { ctx }) // console + Sentry exception
 ```
 
-Scope = `domaine.action` (ex: `auth.signup`, `piano.add`, `photo.upload`, `geocoding.reverse`, `admin.ban`, `notif.prefs.update`). Filtrable par tag dans Sentry. Seul fichier autorisé à utiliser `console.*` directement : `src/lib/logger.ts` (ESLint override).
+Scope = `domaine.action` (ex: `auth.signup`, `piano.add`, `friends.send`, `favorites.toggle`). Seul fichier autorisé à utiliser `console.*` directement : `src/lib/logger.ts` (ESLint override).
 
-### Erreurs — helpers spécialisés selon le contexte
+### Erreurs — helpers spécialisés
 
 ```ts
 import {
@@ -208,31 +83,25 @@ import {
 try {
   await doSomething()
 } catch (err) {
-  if (isInvalidPassword(err)) {
-    toast.error('Mot de passe incorrect')
-    return
-  }
-  if (isRateLimitError(err)) {
-    toast.error('Tu vas trop vite, réessaie demain')
-    return
-  }
+  if (isInvalidPassword(err)) return toast.error('Mot de passe incorrect')
+  if (isRateLimitError(err)) return toast.error('Tu vas trop vite, réessaie plus tard')
   toast.error(getErrorMessage(err, 'Fallback FR'))
 }
 ```
 
 ### Validation — zod schemas dans `src/lib/schemas.ts`
 
-Tout formulaire utilise un schema centralisé. Si tu changes une longueur max, change-le ici, pas dans le composant. Schemas en place : `loginSchema`, `signupSchema` (avec `acceptCgu: z.literal(true)`), `forgotPasswordSchema`, `resetPasswordSchema`, `changePasswordSchema`, `passwordConfirmSchema`, `pianoFormSchema`, `pianoUpdateFormSchema`, `reportFormSchema`, `sessionFormSchema`, `eventFormSchema`, `requestFormSchema`, `replyFormSchema`.
+Tout formulaire utilise un schema centralisé. Si tu changes une longueur max, change-le ici, pas dans le composant. v7 PR-B ajoutera `profileNamesSchema` + `emailSearchSchema`.
 
 ### Constantes — aucune magic number dans le code
 
-`src/lib/constants.ts` regroupe : coords Rennes, 50m doublons, 200 Ko photo, regex pseudo, clés localStorage, `NOTIFICATION_CATEGORIES` + `NOTIFICATION_LABELS`, `RATE_LIMITS` (mirror SQL), `CGU_VERSION`, `COMMUNITY_PAST_DAYS` / `COMMUNITY_FUTURE_DAYS`.
+`src/lib/constants.ts` regroupe coords Rennes, 50m doublons, 200 Ko photo, regex pseudo, `NOTIFICATION_CATEGORIES` (8 entrées — `notify_favorite_update` à ajouter en v7 PR-B), `RATE_LIMITS` (mirror SQL), `CGU_VERSION`, v6 `FRIENDS_DISPLAY_LIMIT` / `PRESENCE_AVATAR_STACK_LIMIT` / `SESSION_VISIBILITIES`.
 
 ### TypeScript — `type` pas `interface` pour Supabase
 
 Supabase ne reconnaît pas les `interface` comme `Record<string, unknown>` (declaration merging). Le client se résout en `never` → `insert()` casse. Toujours déclarer les Row/Insert/Update en `type = {...}`.
 
-### Tailwind — classes longues OK, `cn()` pour les conditionnels
+### Tailwind — `cn()` pour les conditionnels
 
 ```ts
 import { cn } from '@/lib/utils'
@@ -243,25 +112,11 @@ Prettier + `prettier-plugin-tailwindcss` trient les classes automatiquement au c
 
 ### Tests — Vitest + Testing Library
 
-Convention : un fichier de test miroir le fichier source dans `__tests__/`.
-
-```ts
-// src/lib/__tests__/distance.test.ts
-import { describe, expect, it } from 'vitest'
-import { haversineMeters } from '@/lib/distance'
-
-describe('haversineMeters', () => {
-  it('returns 0 for identical points', () => {
-    expect(haversineMeters({ lat: 0, lng: 0 }, { lat: 0, lng: 0 })).toBe(0)
-  })
-})
-```
-
-Couverture cible : **80% sur `src/lib/`** (seuil bloquant en CI), 30% global (informatif). Snapshot des policies RLS dans `security-snapshot.test.ts` — toute modif schema.sql force un diff explicite (mettre à jour avec `npm test -- -u`).
+Convention miroir `__tests__/`. Couverture cible : **65% sur `src/lib/`** (seuil bloquant en CI), objectif 80% à terme. Snapshot des policies/RPCs/grants RLS dans `security-snapshot.test.ts` — toute modif `schema.sql` force un diff explicite (`npm test -- -u` après revue).
 
 ### Conventional commits + branches
 
-Cf. [BRANCHING.md](BRANCHING.md). Format imposé par commitlint au commit-msg hook :
+Voir [BRANCHING.md](BRANCHING.md). Format imposé par commitlint :
 
 ```
 <type>(<scope>): <résumé impératif, lowercase, ≤ 100 chars>
@@ -269,77 +124,88 @@ Cf. [BRANCHING.md](BRANCHING.md). Format imposé par commitlint au commit-msg ho
 
 Types : `feat`, `fix`, `security`, `chore`, `docs`, `test`, `ci`, `perf`, `refactor`, `style`, `build`, `revert`.
 
-Branches : `feat/<slug>`, `fix/<slug>`, `security/<slug>`, etc. Toujours PR vers `main`, **jamais commit direct sur main** (branch protection).
+Pour le détail (logger sanitize, error guards complets, schemas list, ESLint overrides, Prettier options, Husky setup) voir [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
 
 ---
 
-## Conventions data (Supabase)
+## Sécurité — defense in depth (7 couches)
 
-### RLS — tout est protégé
+1. **RLS policies** sur toutes les tables publiques (sinon REVOKE ALL → invisible PostgREST)
+2. **Column-level grants** sur `profiles` (anon+auth voient `(id, pseudo, created_at)` seulement)
+3. **RPCs SECURITY DEFINER** avec `set search_path = public` + garde explicite (`auth.uid()`, `is_admin()`, `is_banned()`, etc.)
+4. **Rate-limits** : trigger BEFORE INSERT générique + helper `enforce_caller_rate_limit` pour RPC bodies (v7)
+5. **Advisory locks** transactionnels (rate-limit, friendship RPCs, toggle_favorite)
+6. **Re-auth password** sur RPCs irréversibles (ban, force-delete, delete-account)
+7. **Audit log** admin-only, écrit via `write_audit_log()` SECURITY DEFINER
 
-- `profiles` :
-  - SELECT : column-level grants (anon + authenticated voient `id, pseudo, created_at` uniquement). Pour lire `role` + `banned_at` : RPC `get_my_profile()` (self) ou `admin_list_users(...)` (admin).
-  - UPDATE/INSERT/DELETE : self only (RLS).
-- `pianos` : SELECT public (`is_deleted = false`), INSERT auth + check banned, UPDATE/DELETE par créateur.
-- `piano_updates` : SELECT public, INSERT auth, **immuable**.
-- `piano_reports` : INSERT auth, SELECT par rapporteur OU admin.
-- `piano_visits` / `piano_sessions` : SELECT public, INSERT auth + check banned.
-- `events` / `event_participants` : SELECT public, INSERT events par admin, join par self avec `event_has_room()`.
-- `user_requests` : SELECT par self OR admin, INSERT par self.
-- `notification_preferences` / `push_subscriptions` : self only.
-- `notifications_outbox` : SELECT admin only (service_role bypasse via Edge Function).
-- `rate_limit_buckets` : aucune RLS exposée — accès uniquement via trigger SECURITY DEFINER.
-- `audit_log` : SELECT admin only, écriture uniquement via `write_audit_log()` SECURITY DEFINER.
-- Storage `piano-photos` : lecture publique, écriture auth, delete par owner.
+### Rate limits (mirror SQL ↔ `src/lib/constants.ts`)
 
-### Rate limits (BEFORE INSERT trigger `enforce_rate_limit`)
-
-| Action          | Max | Fenêtre |
-| --------------- | --- | ------- |
-| `piano_create`  | 5   | 24 h    |
-| `piano_update`  | 30  | 24 h    |
-| `piano_visit`   | 50  | 24 h    |
-| `piano_session` | 10  | 24 h    |
-| `piano_report`  | 5   | 24 h    |
-| `user_request`  | 5   | 7 j     |
-
-Sérialisé par `pg_advisory_xact_lock(hashtext(user_id || action))` → batch INSERT et `Promise.all` ne contournent pas. Erreur `P0001 rate_limit_exceeded` détectée par `isRateLimitError()`.
-
-### RPCs sensibles (toutes SECURITY DEFINER + search_path fixé)
-
-| RPC                                                             | Garde                                                        | Effet                                          |
-| --------------------------------------------------------------- | ------------------------------------------------------------ | ---------------------------------------------- |
-| `get_my_profile()`                                              | auth                                                         | Lit profil complet du caller                   |
-| `admin_list_users(q, filter, lim)`                              | is_admin()                                                   | Liste users (role + banned visible)            |
-| `verify_my_password(p)`                                         | auth                                                         | Compare bcrypt côté SQL (pgcrypto)             |
-| `set_user_role(target, new_role)`                               | is_superadmin() + self interdit + dernier superadmin protégé | Update role + audit log                        |
-| `set_user_banned(target, banned, p_password)`                   | is_admin() + verify_my_password                              | Update banned_at + audit log                   |
-| `force_delete_piano(target, p_password)`                        | is_admin() + verify_my_password                              | Soft delete + audit log                        |
-| `delete_my_account(p_password)`                                 | auth + verify_my_password                                    | Cascade auth.users                             |
-| `resolve_report(report_id)`                                     | is_admin()                                                   | resolved=true + audit log                      |
-| `reply_to_request(request_id, reply)`                           | is_admin() + len check                                       | Update + outbox notif + audit log              |
-| `export_my_data()`                                              | auth                                                         | jsonb avec les 10 sources de données du caller |
-| `write_audit_log(action, target, payload)`                      | aucune (interne, appelée par autres RPCs)                    | INSERT audit_log                               |
-| `mark_notification_sent(notif_id, err)`                         | service_role only                                            | Retry/backoff/DLQ outbox                       |
-| `list_pending_notifications(lim)` / `purge_old_notifications()` | service_role only                                            | Helpers pg_cron                                |
-| `handle_new_user()`                                             | trigger auth.users INSERT                                    | Crée profile avec pseudo + accept_cgu          |
-| `is_admin()` / `is_superadmin()` / `is_banned()`                | aucune                                                       | Helpers RLS (pas de récursion)                 |
-
-### Soft delete des pianos
-
-Champ `is_deleted boolean`. Le delete UI met le flag à true. La RLS `pianos_select` filtre `is_deleted = false`. Purge physique = SQL manuel.
+| Action              | Max | Fenêtre |
+| ------------------- | --- | ------- |
+| `piano_create`      | 5   | 24 h    |
+| `piano_update`      | 30  | 24 h    |
+| `piano_visit`       | 50  | 24 h    |
+| `piano_session`     | 10  | 24 h    |
+| `piano_report`      | 5   | 24 h    |
+| `user_request`      | 5   | 7 j     |
+| `friend_request`    | 20  | 24 h    |
+| `user_search_email` | 5   | 24 h    |
 
 ### Anonymisation RGPD-cohérente
 
-`piano_updates.updated_by` est `ON DELETE SET NULL` (pas cascade). Snapshot `author_pseudo_at_time` rempli par trigger BEFORE INSERT → l'historique survit aux suppressions de compte.
+`piano_updates.updated_by` est `ON DELETE SET NULL`. Snapshot `author_pseudo_at_time` rempli par trigger BEFORE INSERT → l'historique survit aux suppressions de compte. Même pattern v6 (`sender_pseudo` snapshot payload `friend_arriving`) et v7 (`updater_pseudo` payload `piano_favorite_update`).
 
-### "Encore là" calculé client-side
+### `export_my_data()` RGPD
 
-`usePianos` fetch `piano_updates` en parallèle et calcule `still_there` depuis la dernière MAJ. Pas de colonne stockée → pas de race condition de sync.
+Retourne jsonb : `user, profile, pianos, piano_updates, piano_reports, piano_visits, piano_sessions, piano_favorites (v7), friendships (v7), event_participants, user_requests, notification_preferences, push_subscriptions`. Push subscriptions exportent endpoint + UA seulement (jamais p256dh/auth_secret).
 
-### Notifications (outbox + Edge Function)
+Pour le modèle de sécurité complet (RLS pattern, threat model, backlog, sub-RPCs, advisory locks détaillés), voir [docs/SECURITY.md](docs/SECURITY.md). Pour le catalogue exhaustif des RPCs, voir [docs/RPCS.md](docs/RPCS.md).
 
-Trigger DB pousse dans `notifications_outbox` (5 kinds : `piano_comment`, `piano_update`, `session_conflict`, `request_reply`, `event_created`). Webhook Supabase POST vers Edge Function `send-notification` (avec header `x-webhook-secret`). La fonction **re-fetch la ligne par id depuis la DB** (ne fait pas confiance au payload), filtre selon `notification_preferences`, envoie Resend + web-push, marque sent via `mark_notification_sent` (backoff exponentiel : 2/4/8/16/32 min, DLQ à la 5e). Purge nightly via pg_cron.
+---
+
+## Notifications (résumé — voir [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md))
+
+Pattern **outbox transactionnel** : trigger DB → `notifications_outbox` → webhook → Edge Function `send-notification` (re-fetch row depuis DB, jamais le payload webhook) → filtre prefs + banned → re-vérif spécifique (friend_arriving check `are_friends_safe` à delivery time) → mail Resend + push web-push → `mark_notification_sent` (backoff exponentiel 2/4/8/16/32 min, DLQ à la 5e). Purge nightly via pg_cron.
+
+**9 notification kinds (post v7)** : `piano_comment, piano_update, session_conflict, request_reply, event_created` (v4) + `friend_arriving, friend_request_received, friend_request_accepted` (v6) + `piano_favorite_update` (v7).
+
+⚠️ **Transitional state v7 PR-A** : `notify_favorite_update` existe en DB (colonne + KIND_TO_PREF) mais n'est PAS encore dans `NOTIFICATION_CATEGORIES` côté `src/lib/constants.ts` → le toggle UI sera invisible jusqu'à PR-B v7. Conséquence : les users reçoivent les notifs MAJ favoris sans pouvoir opt-out via UI tant que PR-B n'est pas mergée. À fixer dans PR-B v7.
+
+---
+
+## Arborescence (résumé — voir [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) pour le détail)
+
+```
+src/
+  main.tsx                        # 5 providers (Sentry/Router/Query/Theme/Auth) + Toaster
+  App.tsx                         # routes lazy + RequireAuth + RequireAdmin + AppShell unique
+  lib/                            # logger, errors, schemas, constants, supabase, sentry, web-push,
+                                  # geocoding, photo, distance, date, utils, session-status
+                                  # + __tests__/ (Vitest + security-snapshot RLS)
+  contexts/                       # AuthContext (useAuth re-exporté ici, PAS dans hooks/), ThemeContext
+  hooks/                          # tous TanStack Query (sauf useGeolocation/useOnline)
+                                  # 17 hooks dont useFriends (v6), usePianoPresence (v6)
+                                  # v7 PR-B ajoutera : usePianoSearch, useEmailSearch, useFavorites
+  components/
+    ui/                           # primitives (Button CVA, Dialog sans focus trap,
+                                  # Tabs sans ArrowKey handler, Avatar HSL hash, etc.)
+    Auth/ Map/ Piano/ Layout/ Onboarding/ Settings/ Admin/ Community/ Events/ Requests/
+    Friends/                      # v6 — FriendsTab + FriendCard + AddFriendButton (5 états)
+                                  # + RemoveFriendDialog (confirmation textuelle "retirer")
+    Dashboard/ActivityTab.tsx
+  pages/                          # toutes lazy : AuthPage, MapPage, Dashboard (5 tabs),
+                                  # SearchPage, SettingsPage, UserPage, PianoPage, LegalPage, AdminPage
+  test/setup.ts
+  types/database.ts               # Database type + enums + v6/v7 types (Friendship, PianoFavorite, ...)
+
+supabase/
+  schema.sql                      # 15 sections (1-11 cœur, 12 bootstrap, 13 setup, 14 v6, 15 v7)
+  functions/send-notification/    # Edge Function Deno (Resend + web-push) + 9 templates
+
+# Racine
+BRANCHING.md, CLAUDE.md, docs/, eslint.config.js, commitlint.config.js, vitest.config.ts,
+.husky/, .github/, .prettierrc.json, vercel.json
+```
 
 ---
 
@@ -357,7 +223,8 @@ npm run format:check     # prettier --check
 npm test                 # vitest run (CI mode)
 npm run test:watch       # vitest interactive
 npm run test:coverage    # rapport coverage v8
-npm test -- -u           # update snapshots (after RLS schema change)
+npm test -- -u           # update snapshots (après modif schema.sql)
+npx vitest run --update  # alternative explicite update snapshot
 ```
 
 Pre-commit hook lance automatiquement `lint-staged` (eslint --fix + prettier --write) + `tsc --noEmit`. Commit-msg hook lance commitlint. Pas besoin de penser à `npm run lint` avant le commit.
@@ -368,46 +235,32 @@ Pre-commit hook lance automatiquement `lint-staged` (eslint --fix + prettier --w
 
 Skills custom du projet, dans `.claude/skills/` (committés, versionnés). Invocables via `/<nom>` ou auto-déclenchés sur les phrases indiquées.
 
-| Skill             | Quand l'utiliser                                                                                                             |
-| ----------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `/quality-check`  | Gate locale rapide : typecheck → lint → tests → build, stop au 1er échec. Avant un commit/push.                              |
-| `/ship-it`        | Pré-déploiement (Workflow multi-agents) : qualité + sécurité → verdict GO/NO-GO. Avant une PR/merge. ⚠️ facturé.             |
-| `/security-audit` | Audit sécurité multi-axes (RLS, RPCs, frontend, Edge, CSP, RGPD) via Workflow. Arg optionnel pour cibler un axe. ⚠️ facturé. |
-| `/rpc-create`     | Scaffolde une RPC `SECURITY DEFINER` conforme (search_path, garde, re-auth, audit_log, grants) + rappel snapshot.            |
-| `/design-review`  | Revue design/UX d'une page/composant vs design system "Bois de piano" (tokens, primitives, mobile-first).                    |
-| `/a11y-audit`     | Audit accessibilité (erreur↔champ, clavier/Tabs, aria-label, focus, contraste). Cible les gaps connus.                       |
-| `/feature-slice`  | Ajout d'une feature data end-to-end : table + RLS + zod + type + constantes + hook + snapshot (+ notifs).                    |
+| Skill             | Quand l'utiliser                                                                                |
+| ----------------- | ----------------------------------------------------------------------------------------------- |
+| `/quality-check`  | Gate locale rapide : typecheck → lint → tests → build, stop au 1er échec. Avant un commit/push. |
+| `/ship-it`        | Pré-déploiement (Workflow multi-agents) : qualité + sécurité → verdict GO/NO-GO. ⚠️ facturé.    |
+| `/security-audit` | Audit sécurité multi-axes (RLS, RPCs, frontend, Edge, CSP, RGPD) via Workflow. ⚠️ facturé.      |
+| `/rpc-create`     | Scaffolde une RPC `SECURITY DEFINER` conforme + rappel snapshot.                                |
+| `/design-review`  | Revue design/UX d'une page/composant vs design system "Bois de piano".                          |
+| `/a11y-audit`     | Audit accessibilité (erreur↔champ, clavier/Tabs, aria-label, focus, contraste).                 |
+| `/feature-slice`  | Ajout d'une feature data end-to-end : table + RLS + zod + type + constantes + hook + snapshot.  |
 
 `ship-it` et `security-audit` lancent le tool Workflow (multi-agents, facturé) : ne les exécuter que sur demande explicite.
 
 ---
 
-## Setup local (premier checkout)
+## Setup local rapide
+
+Voir [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) pour les étapes complètes (Supabase, Edge Function, GitHub, Vercel, pg_cron).
 
 1. `npm install --legacy-peer-deps`
-2. Crée un projet Supabase (free tier, region eu-west-3)
-3. `Settings > API` → copie URL et anon key
-4. `Authentication > Providers > Email` → **active "Confirm email"** (v5 — le trigger `handle_new_user` gère la création du profile post-confirmation)
-5. `Authentication > URL Configuration` → Site URL = ton URL Vercel, Redirect URLs inclut `<URL>/auth/login`
-6. `SQL Editor` → exécute [supabase/schema.sql](supabase/schema.sql)
-7. (Optionnel mais recommandé) `Database > Webhooks > Create webhook` sur `notifications_outbox` INSERT → Edge Function `send-notification` + header `x-webhook-secret`
-8. (Optionnel) `Database > Extensions` → enable `pg_cron` + `pg_net`, puis exécute les `cron.schedule(...)` du commentaire section 13 de schema.sql (retry + purge notifs)
-9. `Copy-Item .env.example .env`, remplis :
-   ```
-   VITE_SUPABASE_URL=https://xxx.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJ...
-   VITE_SENTRY_DSN=                  # optionnel
-   VITE_VAPID_PUBLIC_KEY=            # optionnel (push), npx web-push generate-vapid-keys
-   ```
-10. `npm run dev`
-
-### Setup Edge Function (mails + push)
-
-Cf. [supabase/functions/send-notification/README.md](supabase/functions/send-notification/README.md). Compte Resend gratuit + clés VAPID + secrets Supabase + deploy.
-
-### Setup GitHub (CI + Dependabot)
-
-Push sur GitHub déclenche automatiquement la CI. Pour activer la branch protection sur `main` : cf. [BRANCHING.md](BRANCHING.md) section "Branch protection".
+2. Créer projet Supabase free tier eu-west-3
+3. SQL Editor → exécuter `supabase/schema.sql`
+4. `Authentication > Providers > Email` → activer "Confirm email" (v5+ obligatoire)
+5. (Optionnel) Webhook `notifications_outbox` INSERT → Edge Function + secrets Resend/VAPID
+6. (Optionnel) pg_cron jobs (`notif-retry */5` + `notif-purge` nightly)
+7. `cp .env.example .env`, remplir `VITE_SUPABASE_URL/ANON_KEY`, optionnels SENTRY_DSN + VAPID_PUBLIC_KEY
+8. `npm run dev`
 
 ---
 
@@ -421,9 +274,9 @@ Push sur GitHub déclenche automatiquement la CI. Pour activer la branch protect
 
 Toujours redémarrer `npm run dev` après avoir touché `.env`.
 
-### Email confirmation Supabase — DOIT être activée (v5)
+### Email confirmation Supabase — DOIT être activée (v5+)
 
-⚠️ **Changement par rapport à v1.** En v5, l'email confirmation est obligatoire. Le trigger SQL `handle_new_user` (AFTER INSERT sur `auth.users`) crée le profil côté serveur — donc `auth.uid()` peut être null au moment du signup sans casser quoi que ce soit. Si tu désactives la confirmation, tu casses le flow `/auth/confirm-pending`.
+Le trigger SQL `handle_new_user` (AFTER INSERT sur `auth.users`) crée le profil côté serveur — donc `auth.uid()` peut être null au moment du signup sans casser quoi que ce soit. Si tu désactives la confirmation, tu casses le flow `/auth/confirm-pending`.
 
 ### Nominatim rate limit
 
@@ -431,7 +284,7 @@ Toujours redémarrer `npm run dev` après avoir touché `.env`.
 
 ### Supabase types : `type` obligatoire (pas `interface`)
 
-Voir conventions ci-dessus. Si un `from('table').insert(...)` retourne une erreur "never[]", c'est que `Database['public']` ne satisfait pas `GenericSchema`, probablement à cause d'un `interface`.
+Si un `from('table').insert(...)` retourne une erreur "never[]", c'est que `Database['public']` ne satisfait pas `GenericSchema`, probablement à cause d'un `interface`.
 
 ### PWA icons absents
 
@@ -447,17 +300,17 @@ Premier accès = quelques secondes de réveil. Non bloquant mais peut causer un 
 
 ### commitlint subject lowercase
 
-Le commit-msg hook refuse les sujets avec capitalisation incohérente. Subject doit être **lowercase strict** ou **sentence-case strict** (premier mot capitalisé puis tout lowercase). Les acronymes en milieu (RGPD, CGU, RLS, RPC, CI) cassent → écrire `rgpd`, `cgu`, `rls`, etc. dans le subject. Le body peut être normal.
+Le commit-msg hook refuse les sujets avec capitalisation incohérente. Subject doit être **lowercase strict** ou **sentence-case strict**. Les acronymes en milieu (RGPD, CGU, RLS, RPC, CI) cassent → écrire `rgpd`, `cgu`, `rls`, etc. dans le subject. Le body peut être normal.
 
 ### Snapshot RLS — `npm test -- -u` après chaque modif schema.sql
 
-Toute modification de policy / trigger / RPC dans `schema.sql` fait diverger le snapshot Vitest. Workflow :
+Toute modification de policy / trigger / RPC / grant dans `schema.sql` fait diverger le snapshot Vitest. Workflow :
 
 1. Modifier `schema.sql`
 2. `npm test` → snapshot diffère
 3. Vérifier le diff visuellement (intentionnel ?)
-4. `npm test -- -u` pour figer la nouvelle baseline
-5. Committer schema.sql + le `.snap` mis à jour
+4. `npm test -- -u` (ou `npx vitest run --update`) pour figer la nouvelle baseline
+5. Committer `schema.sql` + le `.snap` mis à jour
 
 ### `--legacy-peer-deps` nécessaire à l'install
 
@@ -469,11 +322,31 @@ Ne fonctionnent qu'avec PWA installée ("Ajouter à l'écran d'accueil"), pas en
 
 ### Service Worker PWA stale après changement majeur
 
-Si tu changes le manifest, des URLs de tuiles ou des stratégies de cache dans `vite.config.ts`, le SW déjà installé chez l'utilisateur peut continuer à servir des assets obsolètes (carte grise, manifeste pas à jour, etc.). Le `registerType: 'autoUpdate'` aide mais n'est pas instantané — le client doit fermer/rouvrir l'onglet.
+Si tu changes le manifest, des URLs de tuiles ou des stratégies de cache dans `vite.config.ts`, le SW déjà installé peut continuer à servir des assets obsolètes. Le `registerType: 'autoUpdate'` + `clientsClaim: true` + `skipWaiting: true` + `cleanupOutdatedCaches: true` + stratégies `StaleWhileRevalidate` (vs CacheFirst) corrigent au prochain refetch. Pour test propre en preview : navigation privée OU `DevTools → Application → Service Workers → Unregister` puis `Cmd/Ctrl+Shift+R`.
 
-**Pour test propre en preview** : ouvrir en navigation privée OU `DevTools → Application → Service Workers → Unregister` puis `Cmd/Ctrl+Shift+R`. La PWA précédente est tuée, la nouvelle prend le relais.
+### v7 transitional state — `notify_favorite_update` invisible UI
 
-**Pour les utilisateurs déjà installés** : depuis v5.1, `clientsClaim: true` + `skipWaiting: true` + `cleanupOutdatedCaches: true` forcent le SW à prendre le contrôle au prochain page-load, et les caches stratégies sont en `StaleWhileRevalidate` plutôt que `CacheFirst` — un mauvais cache se répare au prochain refetch.
+Voir section Notifications ci-dessus. Tant que PR-B v7 n'est pas mergée, le toggle n'apparaît pas dans Settings → Notifications.
+
+### v7 transitional state — NavBar 5e icône Amis
+
+Aujourd'hui les amis sont accessibles via `/dashboard?tab=friends`. PR-B v7 ajoutera une 5e icône Users → page `/friends` standalone.
+
+### `useAuth` n'est pas dans `src/hooks/`
+
+Le hook `useAuth` vit dans `src/contexts/AuthContext.tsx`. Tous les consommateurs `import { useAuth } from '@/contexts/AuthContext'`. Ne pas chercher un fichier `src/hooks/useAuth.ts` — il n'existe pas.
+
+### AdminPage tabs non URL-synced
+
+Contrairement à `Dashboard` qui utilise `?tab=`, `AdminPage` garde l'onglet en state local → refresh sur `/admin` retombe sur l'onglet KPIs. À synchroniser un jour (item C.4 du backlog).
+
+### Leaflet CSS importée globalement
+
+`src/main.tsx:11` importe `leaflet.css` au top-level → quelques KB de CSS shippés sur les pages non-carte. Migration future : importer dans `MapPage` chunk.
+
+### Dashboard comment header stale
+
+Le commentaire JSDoc en tête de `src/pages/Dashboard.tsx:15-22` dit encore "3 onglets" alors que le code en définit 5 (`activity, community, events, requests, friends`). À nettoyer.
 
 ---
 
@@ -490,72 +363,83 @@ Si tu changes le manifest, des URLs de tuiles ou des stratégies de cache dans `
 - **Pas de commit direct sur `main`** → toujours via branche + PR (branch protection l'empêche)
 - **Pas de `git commit --no-verify`** sauf urgence vraiment exceptionnelle → si Husky bloque, fix la cause
 - **Pas de `git push --force` sur `main`** → désactivé en branch protection de toute façon
-- **Pas de SELECT direct sur `profiles` pour lire role/banned_at** → utiliser RPC `get_my_profile()` ou `admin_list_users()`
+- **Pas de SELECT direct sur `profiles` pour lire role/banned_at/first_name/last_name** → utiliser RPC `get_my_profile()`, `admin_list_users()`, `search_users()` ou `find_user_by_email()`
 - **Pas de `signInWithPassword` pour re-auth** → utiliser RPC `verify_my_password()` (sinon rotation session sur tous les devices)
 - **Pas de nouvelle RPC sans `set search_path = public`** → le snapshot RLS le check
-- **Pas de notification mail/push sans vérifier `notification_preferences`** → soit côté SQL (trigger filtré), soit côté Edge Function
+- **Pas de notification mail/push sans vérifier `notification_preferences`** → soit côté SQL (trigger filtré), soit côté Edge Function via `KIND_TO_PREF`
+- **Pas d'accès direct à `friendships` / `friendship_rejections` / `friend_arriving_dedup`** → tables REVOKE ALL, accès exclusif via les 10 RPCs v6
+- **Pas de SELECT visibility-aware côté client sur `piano_sessions`** → utiliser RPC `list_piano_presence(p_piano)` ou `get_active_piano_counts(piano_ids[])` qui appliquent les filtres en SECURITY DEFINER
 
 ---
 
 ## Où trouver quoi rapidement
 
-| Tu cherches…                                | Fichier                                                                                           |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Comment fetcher tous les pianos             | `src/hooks/usePianos.ts`                                                                          |
-| Comment valider un formulaire               | `src/lib/schemas.ts`                                                                              |
-| La palette de couleurs                      | `src/index.css` (CSS vars `--primary`, etc.)                                                      |
-| Les couleurs des badges qualité             | `src/types/database.ts` (`QUALITY_COLORS`)                                                        |
-| Le schéma DB / RLS / RPCs                   | `supabase/schema.sql`                                                                             |
-| Le flow d'ajout piano                       | `src/components/Map/AddPianoFlow.tsx`                                                             |
-| L'auth context (signUp avec confirm)        | `src/contexts/AuthContext.tsx`                                                                    |
-| Le client Supabase + normalisation URL      | `src/lib/supabase.ts`                                                                             |
-| Comment Sentry est configuré + scrubber PII | `src/lib/sentry.ts`                                                                               |
-| Les routes lazy + guards                    | `src/App.tsx`                                                                                     |
-| Le tutoriel d'accueil                       | `src/components/Onboarding/Tutorial.tsx`                                                          |
-| La logique "encore là"                      | `src/hooks/usePianos.ts`                                                                          |
-| La RPC suppression compte                   | `supabase/schema.sql` + `src/components/Settings/DeleteAccountDialog.tsx`                         |
-| Le logger                                   | `src/lib/logger.ts`                                                                               |
-| Les constantes                              | `src/lib/constants.ts`                                                                            |
-| Les notifications mail/push                 | `supabase/functions/send-notification/`                                                           |
-| Les préférences notification user           | `src/components/Settings/NotificationPreferences.tsx` + `src/hooks/useNotificationPreferences.ts` |
-| Le web push opt-in                          | `src/lib/web-push.ts`                                                                             |
-| L'onglet Communauté (Calendrier/Liste)      | `src/components/Community/CommunityTab.tsx`                                                       |
-| L'audit log admin                           | `src/components/Admin/AuditLogTab.tsx` + `useAuditLog`                                            |
-| Le bandeau cookies                          | `src/components/Layout/CookieBanner.tsx`                                                          |
-| La page légale 3 onglets                    | `src/pages/LegalPage.tsx`                                                                         |
-| L'export RGPD complet                       | `src/components/Settings/ExportDataButton.tsx` (RPC `export_my_data`)                             |
-| Le rate limit + advisory lock               | `supabase/schema.sql` section 11.b                                                                |
-| La protection lockout superadmin            | `supabase/schema.sql` fonction `set_user_role`                                                    |
-| Le snapshot RLS                             | `src/lib/__tests__/security-snapshot.test.ts` + `__snapshots__/`                                  |
-| La stratégie de branche                     | [BRANCHING.md](BRANCHING.md)                                                                      |
-| La référence des features                   | [docs/FONCTIONNALITES.md](docs/FONCTIONNALITES.md)                                                |
-| La config CI                                | `.github/workflows/ci.yml`                                                                        |
-| Les hooks Git                               | `.husky/pre-commit`, `.husky/commit-msg`                                                          |
+| Tu cherches…                                | Fichier                                                                                                                                                                                         |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Comment fetcher tous les pianos             | [src/hooks/usePianos.ts](src/hooks/usePianos.ts)                                                                                                                                                |
+| Comment valider un formulaire               | [src/lib/schemas.ts](src/lib/schemas.ts)                                                                                                                                                        |
+| La palette de couleurs                      | [src/index.css](src/index.css) (CSS vars `--primary`, etc.)                                                                                                                                     |
+| Les couleurs des badges qualité             | [src/types/database.ts](src/types/database.ts) (`QUALITY_COLORS`)                                                                                                                               |
+| Le schéma DB / RLS / RPCs                   | [supabase/schema.sql](supabase/schema.sql) + [docs/RPCS.md](docs/RPCS.md)                                                                                                                       |
+| Le flow d'ajout piano                       | [src/components/Map/AddPianoFlow.tsx](src/components/Map/AddPianoFlow.tsx)                                                                                                                      |
+| L'auth context (signUp avec confirm)        | [src/contexts/AuthContext.tsx](src/contexts/AuthContext.tsx)                                                                                                                                    |
+| Le client Supabase + normalisation URL      | [src/lib/supabase.ts](src/lib/supabase.ts)                                                                                                                                                      |
+| Comment Sentry est configuré + scrubber PII | [src/lib/sentry.ts](src/lib/sentry.ts)                                                                                                                                                          |
+| Les routes lazy + guards                    | [src/App.tsx](src/App.tsx)                                                                                                                                                                      |
+| Le tutoriel d'accueil                       | [src/components/Onboarding/Tutorial.tsx](src/components/Onboarding/Tutorial.tsx)                                                                                                                |
+| La logique "encore là"                      | [src/hooks/usePianos.ts](src/hooks/usePianos.ts)                                                                                                                                                |
+| La RPC suppression compte                   | [supabase/schema.sql](supabase/schema.sql) + [src/components/Settings/DeleteAccountDialog.tsx](src/components/Settings/DeleteAccountDialog.tsx)                                                 |
+| Le logger                                   | [src/lib/logger.ts](src/lib/logger.ts)                                                                                                                                                          |
+| Les constantes                              | [src/lib/constants.ts](src/lib/constants.ts)                                                                                                                                                    |
+| Les notifications mail/push                 | [supabase/functions/send-notification/](supabase/functions/send-notification/) + [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)                                                                 |
+| Les préférences notification user           | [src/components/Settings/NotificationPreferences.tsx](src/components/Settings/NotificationPreferences.tsx) + [src/hooks/useNotificationPreferences.ts](src/hooks/useNotificationPreferences.ts) |
+| Le web push opt-in                          | [src/lib/web-push.ts](src/lib/web-push.ts)                                                                                                                                                      |
+| L'onglet Communauté (Calendrier/Liste)      | [src/components/Community/CommunityTab.tsx](src/components/Community/CommunityTab.tsx)                                                                                                          |
+| L'audit log admin                           | [src/components/Admin/AuditLogTab.tsx](src/components/Admin/AuditLogTab.tsx) + `useAuditLog`                                                                                                    |
+| Le bandeau cookies                          | [src/components/Layout/CookieBanner.tsx](src/components/Layout/CookieBanner.tsx)                                                                                                                |
+| La page légale 3 onglets                    | [src/pages/LegalPage.tsx](src/pages/LegalPage.tsx)                                                                                                                                              |
+| L'export RGPD complet                       | [src/components/Settings/ExportDataButton.tsx](src/components/Settings/ExportDataButton.tsx) (RPC `export_my_data`)                                                                             |
+| Le rate limit + advisory lock               | [supabase/schema.sql](supabase/schema.sql) section 11.b + [docs/SECURITY.md](docs/SECURITY.md)                                                                                                  |
+| La protection lockout superadmin            | [supabase/schema.sql](supabase/schema.sql) fonction `set_user_role`                                                                                                                             |
+| Le snapshot RLS                             | [src/lib/**tests**/security-snapshot.test.ts](src/lib/__tests__/security-snapshot.test.ts) + `__snapshots__/`                                                                                   |
+| La stratégie de branche                     | [BRANCHING.md](BRANCHING.md)                                                                                                                                                                    |
+| La référence des features                   | [docs/FONCTIONNALITES.md](docs/FONCTIONNALITES.md)                                                                                                                                              |
+| La config CI                                | [.github/workflows/ci.yml](.github/workflows/ci.yml)                                                                                                                                            |
+| Les hooks Git                               | [.husky/pre-commit](.husky/pre-commit), [.husky/commit-msg](.husky/commit-msg)                                                                                                                  |
+| Le système d'amitié v6 (hooks + UI)         | [src/hooks/useFriends.ts](src/hooks/useFriends.ts) + [src/components/Friends/](src/components/Friends/)                                                                                         |
+| La visibility des sessions v6               | [src/lib/schemas.ts](src/lib/schemas.ts) `sessionFormSchema` + [supabase/schema.sql](supabase/schema.sql) section 14.c                                                                          |
+| Le compteur de présence v6                  | [src/components/Piano/PianoPresenceCounter.tsx](src/components/Piano/PianoPresenceCounter.tsx) + `usePianoPresence`                                                                             |
+| Les RPCs v7 search/favoris                  | [supabase/schema.sql](supabase/schema.sql) section 15.h + [docs/RPCS.md](docs/RPCS.md)                                                                                                          |
+| Le helper rate-limit RPC body v7            | [supabase/schema.sql](supabase/schema.sql) `enforce_caller_rate_limit`                                                                                                                          |
 
 ---
 
-## Statut v5
+## Statut v7
 
-**v1** : auth (login/signup/forgot/reset/delete/export), carte (markers + clustering + filtres + dark), ajout piano (géoloc/drag/photo/doublons/géocodage), détail + MAJ + historique + édition, recherche pseudo, profil, dashboard, settings, tutoriel, mode sombre, mentions légales, PWA, Sentry, vercel.json.
+- **v1** : auth (login/signup/forgot/reset/delete/export), carte (markers + clustering + filtres + dark), ajout piano, détail + MAJ + historique + édition, recherche pseudo, profil, dashboard, settings, tutoriel, mode sombre, mentions légales, PWA, Sentry, vercel.json.
+- **v2** : Activité — passages ("J'y suis passé") + sessions de présence ("J'y vais") + pulse animé sur la carte pour sessions actives + feed étendu.
+- **v3** : Rôles 3 niveaux (user/admin/superadmin), dashboard admin (KPIs, users, reports, events, requests, roles), bannissement, RPCs admin sécurisées.
+- **v4** : Notifications mail (Resend via Edge Function) + Web Push opt-in + 5 catégories de préférences, onglet Communauté Calendrier/Liste, bandeau cookies RGPD, refonte LegalPage 3 onglets, headers sécurité + CSP, ChangePasswordDialog.
+- **v5** : Durcissement sécurité (RLS column-level grants sur profiles, rate limit bulletproof avec advisory lock, lockout protection superadmin, re-auth password sur RPCs irréversibles, email confirmation Supabase + trigger handle_new_user, CGU checkbox + accept_cgu_at, **audit log admin complet**, RGPD export complet + anonymisation cohérente, outbox retry/backoff/purge), infrastructure tests + DX (Vitest + 66 tests dont snapshot RLS, ESLint flat config, Prettier, Husky, commitlint, GitHub Actions CI, Dependabot, BRANCHING.md), scrubber PII Sentry, headers COOP/COEP/CORP.
+- **v6** : Système d'amitié bidirectionnel (3 tables friendships + friendship_rejections + friend_arriving_dedup, 10 RPCs SECURITY DEFINER, cooldown 30j anti-stalking, auto-accept croisé via advisory lock, ghost-reject silencieux), visibility scope sur piano_sessions (`public`/`friends`) set-once via trigger BEFORE UPDATE, compteur de présence "X session(s) en cours" via batch RPC `get_active_piano_counts` (perf : 1 query au lieu de N), notification `friend_arriving` avec dedup hourly + re-vérif amitié à delivery time, 3 nouvelles préférences notif amis, audit log sur `remove_friendship`.
+- **v7** (en cours) :
+  - **PR-A backend (livrée)** : extensions pg_trgm + unaccent, colonnes `first_name`/`last_name` opt-in sur profiles (column-grants exclus → invisibles via PostgREST direct), 5 indexes GIN trgm (3 profiles + 2 pianos), table `piano_favorites` self-only RLS, notif kind `piano_favorite_update` + colonne `notify_favorite_update`, trigger `queue_favorite_update_notification`, helper `enforce_caller_rate_limit` (rate-limit dans RPC bodies), 6 RPCs : `search_users` (fuzzy 3 cols), `find_user_by_email` (exact-match + rate-limit 5/24h anti-énumération), `search_pianos` (fuzzy address+comment), `update_my_profile_names`, `toggle_piano_favorite` (advisory lock), `get_my_favorites`. `export_my_data` étendu (piano_favorites + friendships).
+  - **PR-B frontend (à venir)** : `SearchTabs` (Utilisateurs/Pianos), `EmailSearchDialog`, `PianoSearchTab`, `FavoriteButton` (Bookmark, variant default + compact), `FavoritesTab` (6e onglet Dashboard ou remplace Amis), `EditNamesDialog` (Settings opt-in noms), `FriendsPage` standalone, **NavBar 5e icône Users** → `/friends`, refactor `Dashboard` (Friends tab → page standalone, Favoris tab ajouté), `notify_favorite_update` ajouté dans `NOTIFICATION_CATEGORIES` (fix transitional UI gap).
 
-**v2** : Activité — passages ("J'y suis passé") + sessions de présence ("J'y vais") + pulse animé sur la carte pour sessions actives + feed étendu.
+**Reste à faire (P2/P3 backlog)** :
 
-**v3** : Rôles 3 niveaux (user/admin/superadmin), dashboard admin (KPIs, users, reports, events, requests, roles), bannissement, RPCs admin sécurisées.
-
-**v4** : Notifications mail (Resend via Edge Function) + Web Push opt-in + 5 catégories de préférences, onglet Communauté Calendrier/Liste, bandeau cookies RGPD, refonte LegalPage 3 onglets, headers sécurité + CSP, ChangePasswordDialog.
-
-**v5** : Durcissement sécurité (RLS column-level grants sur profiles, rate limit bulletproof avec advisory lock, lockout protection superadmin, re-auth password sur RPCs irréversibles, email confirmation Supabase + trigger handle_new_user, CGU checkbox + accept_cgu_at, audit log admin complet, RGPD export complet + anonymisation cohérente, outbox retry/backoff/purge), infrastructure tests + DX (Vitest + 66 tests dont snapshot RLS, ESLint flat config, Prettier, Husky, commitlint, GitHub Actions CI, Dependabot, BRANCHING.md), scrubber PII Sentry, headers COOP/COEP/CORP.
-
-**Reste à faire (P2/P3)** :
-
-- A.1.2 chiffrement `push_subscriptions` (besoin vault Supabase)
-- A.5 CSP nonces (Vercel middleware Edge)
+- A.1.2 chiffrement `push_subscriptions` (vault Supabase nécessaire)
+- A.5 CSP nonces (Vercel middleware Edge — actuellement `'unsafe-inline'` sur script-src + style-src)
 - A.6.3 2FA TOTP admin (Supabase MFA)
 - A.6.4 rate limit signup par IP (Edge Function)
-- A.7 EXIF strip upload (Edge Function process-photo)
+- A.7 EXIF strip upload (Edge Function `process-photo` — photos peuvent contenir GPS)
 - B.3 component/hook tests (MSW)
 - B.4 tests pgTAP RLS via `supabase test db`
 - B.5 Playwright e2e golden paths
+- C.1 Dialog focus trap (a11y gap connu)
+- C.2 Tabs ArrowLeft/Right keyboard handler (a11y gap connu)
+- C.3 `AddFriendButton.findPendingId` stub retournant null (UX dégradée)
+- C.4 AdminPage tabs URL-synced (refresh perd l'onglet)
 - PWA PNG icons à générer
 
-Le plan détaillé est dans `C:\Users\enzor\.claude\plans\j-aimerai-cr-er-une-application-indexed-thunder.md` (sections v1 → v5).
+Plan détaillé : `C:\Users\enzor\.claude\plans\j-aimerai-cr-er-une-application-indexed-thunder.md`.
