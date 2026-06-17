@@ -9,6 +9,7 @@ import { usePianos, type PianoWithAuthor } from '@/hooks/usePianos'
 import { usePianoActiveCounts } from '@/hooks/usePianoPresence'
 import { createPianoIcon } from './PianoMarker'
 import { QualityBadge } from '@/components/Piano/QualityBadge'
+import { FavoriteButton } from '@/components/Piano/FavoriteButton'
 import { LocateMeButton } from './LocateMeButton'
 import { MapFilters, DEFAULT_FILTERS, type MapFiltersValue } from './MapFilters'
 import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '@/lib/constants'
@@ -77,12 +78,15 @@ function PianoPopup({
           'utilisateur supprimé'
         )}
       </p>
-      <Link
-        to={`/piano/${piano.id}`}
-        className="block rounded bg-primary px-3 py-1.5 text-center text-xs font-medium text-primary-foreground"
-      >
-        Voir le détail
-      </Link>
+      <div className="flex items-center gap-2">
+        <Link
+          to={`/piano/${piano.id}`}
+          className="flex-1 rounded bg-primary px-3 py-1.5 text-center text-xs font-medium text-primary-foreground"
+        >
+          Voir le détail
+        </Link>
+        <FavoriteButton pianoId={piano.id} variant="compact" />
+      </div>
     </div>
   )
 }

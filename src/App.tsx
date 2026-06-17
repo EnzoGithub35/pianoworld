@@ -33,6 +33,9 @@ const SettingsPage = lazy(() =>
 const UserPage = lazy(() =>
   import('@/pages/UserPage').then((m) => ({ default: m.UserPage }))
 )
+const FriendsPage = lazy(() =>
+  import('@/pages/FriendsPage').then((m) => ({ default: m.FriendsPage }))
+)
 const LegalPage = lazy(() =>
   import('@/pages/LegalPage').then((m) => ({ default: m.LegalPage }))
 )
@@ -76,6 +79,7 @@ export default function App() {
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/friends" element={<FriendsPage />} />
             <Route path="/user/:pseudo" element={<UserPage />} />
           </Route>
 

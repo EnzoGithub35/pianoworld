@@ -98,7 +98,9 @@ export const NOTIFICATION_CATEGORIES = [
   // v6 — système d'amitié
   'notify_friend_arriving',
   'notify_friend_request_received',
-  'notify_friend_request_accepted'
+  'notify_friend_request_accepted',
+  // v7 — pianos favoris
+  'notify_favorite_update'
 ] as const
 export type NotificationCategory = (typeof NOTIFICATION_CATEGORIES)[number]
 
@@ -111,7 +113,8 @@ export const NOTIFICATION_LABELS: Record<NotificationCategory, string> = {
   notify_events: 'Nouveaux évènements',
   notify_friend_arriving: 'Un ami arrive sur un piano',
   notify_friend_request_received: 'Quelqu’un veut être mon ami',
-  notify_friend_request_accepted: 'Ma demande d’ami a été acceptée'
+  notify_friend_request_accepted: 'Ma demande d’ami a été acceptée',
+  notify_favorite_update: 'Mise à jour d’un piano favori'
 }
 
 /** Regroupement visuel des toggles dans la page Settings → Notifications.
@@ -121,6 +124,7 @@ export const NOTIFICATION_SECTION_OF: Record<NotificationCategory, NotificationS
   {
     notify_comments: 'pianos',
     notify_piano_updates: 'pianos',
+    notify_favorite_update: 'pianos',
     notify_session_conflict: 'sessions',
     notify_events: 'communaute',
     notify_request_reply: 'communaute',
@@ -153,7 +157,9 @@ export const RATE_LIMITS: Record<string, { count: number; windowLabel: string }>
   piano_session: { count: 10, windowLabel: '24 h' },
   piano_report: { count: 5, windowLabel: '24 h' },
   user_request: { count: 5, windowLabel: '7 jours' },
-  friend_request: { count: 20, windowLabel: '24 h' }
+  friend_request: { count: 20, windowLabel: '24 h' },
+  // v7
+  user_search_email: { count: 5, windowLabel: '24 h' }
 }
 
 /* ===========================================================
@@ -189,3 +195,20 @@ export const COMMUNITY_FUTURE_DAYS = 14
  * on peut imposer la re-lecture (à brancher plus tard via une route /cgu-update).
  */
 export const CGU_VERSION = '2026-05-30'
+
+/* ===========================================================
+ * v7 — Recherche unifiée + Pianos favoris + first/last name opt-in
+ * =========================================================== */
+
+/** Longueur max des champs first_name/last_name opt-in (mirror SQL CHECK). */
+export const FIRST_NAME_MAX = 50
+export const LAST_NAME_MAX = 50
+
+/** Recherche piano : nombre de résultats max retournés par RPC search_pianos. */
+export const PIANO_SEARCH_MAX_RESULTS = 30
+
+/** Pagination liste favoris dans FavoritesTab (LIMIT côté SQL = 200). */
+export const FAVORITES_DISPLAY_LIMIT = 200
+
+/** Clé localStorage du dernier onglet sélectionné dans SearchPage (Users / Pianos). */
+export const SEARCH_TAB_KEY = 'pianoworld:search-tab'
