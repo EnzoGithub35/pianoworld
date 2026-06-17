@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Cookie, X } from 'lucide-react'
-import { COOKIE_CONSENT_KEY } from '@/lib/constants'
+import { COOKIE_CONSENT_KEY, TUTORIAL_STORAGE_KEY } from '@/lib/constants'
 
 /**
  * Bandeau cookies minimaliste.
@@ -21,13 +21,34 @@ export function CookieBanner() {
 
   useEffect(() => {
     try {
-      if (!localStorage.getItem(COOKIE_CONSENT_KEY)) {
-        // Laisse l'app respirer avant de poper le bandeau
-        const t = setTimeout(() => setVisible(true), 800)
-        return () => clearTimeout(t)
+      if (localStorage.getItem(COOKIE_CONSENT_KEY)) return
+      // Queue derrière le Tutorial : si le tuto n'a pas encore été vu, on
+      // attend qu'il soit dismissé avant de pop le bandeau cookies. Évite
+      // l'empilement de modals au 1er signup.
+      let cancelled = false
+      const tryShow = () => {
+        if (cancelled) return
+        try {
+          const tutorialSeen = !!localStorage.getItem(TUTORIAL_STORAGE_KEY)
+          if (tutorialSeen) {
+            setVisible(true)
+            return
+          }
+        } catch {
+          // localStorage indispo → on affiche directement (le banner cookies est obligatoire RGPD)
+          setVisible(true)
+          return
+        }
+        // Tutorial encore visible : re-check toutes les 1.5s
+        setTimeout(tryShow, 1500)
+      }
+      const initial = setTimeout(tryShow, 800)
+      return () => {
+        cancelled = true
+        clearTimeout(initial)
       }
     } catch {
-      // localStorage indispo (mode privé strict) → on n'affiche rien
+      // localStorage indispo → on n'affiche rien (le user n'a pas de mémoire de consentement)
     }
   }, [])
 

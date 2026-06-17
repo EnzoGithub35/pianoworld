@@ -95,7 +95,7 @@ export type NotificationPreferences = {
   notify_friend_arriving: boolean
   notify_friend_request_received: boolean
   notify_friend_request_accepted: boolean
-  /** v7 — MAJ sur un piano que je suis (favori). */
+  /** v7 — MAJ d'un piano marqué comme favori. */
   notify_favorite_update: boolean
   push_enabled: boolean
   updated_at: string

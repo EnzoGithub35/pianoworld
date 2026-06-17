@@ -136,7 +136,13 @@ export function AuthPage() {
 
   const isReset = location.pathname.startsWith('/auth/reset')
   const isConfirmPending = location.pathname.startsWith('/auth/confirm-pending')
-  if (user && !isReset && !isConfirmPending) return <Navigate to="/" replace />
+  if (user && !isReset && !isConfirmPending) {
+    // Si on a une destination préservée (depuis RequireAuth), on y retourne.
+    // Sinon défaut sur la carte. Le `from` peut contenir search + hash.
+    const state = location.state as { from?: string } | null
+    const target = state?.from && state.from !== '/auth' ? state.from : '/'
+    return <Navigate to={target} replace />
+  }
 
   return (
     <Routes>

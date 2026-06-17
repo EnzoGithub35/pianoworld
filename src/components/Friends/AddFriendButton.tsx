@@ -2,7 +2,7 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { UserPlus, UserCheck, Check, X, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
-import { useFriendStatus, useFriendActions } from '@/hooks/useFriends'
+import { useFriendStatus, useFriendActions, useFriendRequests } from '@/hooks/useFriends'
 import { useAuth } from '@/contexts/AuthContext'
 import { getErrorMessage, isRateLimitError } from '@/lib/errors'
 import { RemoveFriendDialog } from './RemoveFriendDialog'
@@ -36,6 +36,11 @@ export function AddFriendButton({
   const { sendRequest, cancelRequest, acceptRequest, rejectRequest } = useFriendActions()
   const [confirmRemove, setConfirmRemove] = useState(false)
 
+  // On charge les demandes reçues uniquement quand on en a besoin (status
+  // 'pending_received'). useFriendRequests partage le cache → si Dashboard
+  // l'a déjà fetché, on hit le cache sans réseau supplémentaire.
+  const receivedRequests = useFriendRequests('received')
+
   // Self : pas de bouton du tout
   if (!user || user.id === targetUserId) return null
 
@@ -52,12 +57,14 @@ export function AddFriendButton({
     acceptRequest.isPending ||
     rejectRequest.isPending
 
-  const findPendingId = async (): Promise<string | null> => {
-    // Récupère l'id de la friendship pending pour ce target — utile pour
-    // accept/reject/cancel. On passe par get_my_friend_requests filtré.
-    // Pour l'instant on relit via une query déjà en cache si dispo, sinon
-    // on attend que useFriendActions+useFriendRequests refetch.
-    return null // remplacé par best-effort : on ne bloque pas l'UX si pas trouvé
+  // Résout l'id de la friendship pending pour ce target via le cache
+  // useFriendRequests('received'). Si la query n'a pas encore chargé, on
+  // attend qu'elle finisse (refetchOnWindowFocus fait le rattrapage).
+  const findPendingId = (): string | null => {
+    const list = receivedRequests.data
+    if (!list) return null
+    const match = list.find((r) => r.user_id === targetUserId)
+    return match?.request_id ?? null
   }
 
   const handleSend = async () => {
@@ -65,6 +72,17 @@ export function AddFriendButton({
       await sendRequest.mutateAsync(targetUserId)
       toast.success(`Demande envoyée à @${targetPseudo}`)
     } catch (err) {
+      // Intercepte spécifiquement le cooldown 30j post-reject (raise
+      // 'forbidden' silencieux côté DB). On affiche un message neutre
+      // pour ne pas révéler qu'il s'agit d'un refus (ghost-reject contract).
+      const msg = getErrorMessage(err, '')
+      if (msg.includes('forbidden')) {
+        toast.error(
+          `@${targetPseudo} n'est pas joignable pour le moment. Reprends contact plus tard.`,
+          { duration: 6000 }
+        )
+        return
+      }
       if (isRateLimitError(err)) {
         toast.error('Tu as envoyé trop de demandes aujourd’hui. Réessaie demain.')
         return
@@ -101,27 +119,42 @@ export function AddFriendButton({
         Demande envoyée
       </Button>
     )
+    // Note : on n'expose pas de bouton "Annuler" inline (le user peut le faire
+    // depuis Dashboard → Amis → Envoyées). Garde l'UX ciblée vu qu'annuler
+    // est rare et le cooldown ghost-reject anti-stalking est protecteur.
   }
 
   if (value === 'pending_received') {
-    // On utilise findPendingId si possible. Sinon le user va sur
-    // /dashboard?tab=friends pour répondre — fallback informatif.
+    const pendingId = findPendingId()
+    // Si la query n'est pas encore chargée → loading discret. Si chargée
+    // mais aucun match (race rare) → fallback vers Dashboard.
+    if (receivedRequests.isLoading) {
+      return <div className="h-10 w-32 animate-pulse rounded-md bg-muted" />
+    }
+    if (!pendingId) {
+      return (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            toast('Réponds à la demande depuis Dashboard → Amis → Reçues', {
+              icon: '💡'
+            })
+          }}
+        >
+          Voir la demande
+        </Button>
+      )
+    }
     return (
       <div className="flex gap-2">
         <Button
-          variant="link"
           size="sm"
-          className="px-0 text-xs"
+          disabled={isBusy}
+          loading={acceptRequest.isPending}
           onClick={async () => {
-            const id = await findPendingId()
-            if (!id) {
-              toast('Réponds à la demande depuis Dashboard → Amis → Demandes reçues', {
-                icon: '💡'
-              })
-              return
-            }
             try {
-              await acceptRequest.mutateAsync(id)
+              await acceptRequest.mutateAsync(pendingId)
               toast.success(`Tu es maintenant ami avec @${targetPseudo}`)
             } catch (err) {
               toast.error(getErrorMessage(err, "Erreur lors de l'acceptation"))
@@ -132,19 +165,13 @@ export function AddFriendButton({
           Accepter
         </Button>
         <Button
-          variant="link"
+          variant="outline"
           size="sm"
-          className="px-0 text-xs text-muted-foreground"
+          disabled={isBusy}
+          loading={rejectRequest.isPending}
           onClick={async () => {
-            const id = await findPendingId()
-            if (!id) {
-              toast('Réponds à la demande depuis Dashboard → Amis → Demandes reçues', {
-                icon: '💡'
-              })
-              return
-            }
             try {
-              await rejectRequest.mutateAsync(id)
+              await rejectRequest.mutateAsync(pendingId)
               toast.success('Demande refusée')
             } catch (err) {
               toast.error(getErrorMessage(err, 'Erreur lors du refus'))

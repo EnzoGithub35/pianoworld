@@ -261,10 +261,11 @@ export function renderMail(
       const url = `${appUrl}/piano/${encodeURIComponent(pianoId)}`
       const stillThere =
         typeof payload.still_there === 'boolean' ? payload.still_there : null
-      const subject = sanitizeHeader(`Mise à jour sur un piano que tu suis : ${pianoAddress}`)
+      const subject = sanitizeHeader(`Mise à jour d’un piano favori : ${pianoAddress}`)
       const body = `
         <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
         <p><strong>@${escapeHtml(updaterPseudo)}</strong> a mis à jour le piano de <strong>${escapeHtml(pianoAddress)}</strong> que tu as ajouté à tes favoris.</p>
+        <p style="font-size:13px;color:#7A6A5A;">Tu peux retirer ce piano de tes favoris à tout moment depuis sa fiche.</p>
         ${stillThere === false ? `<p>⚠️ Le piano <strong>n'est plus là</strong> d'après la dernière MAJ.</p>` : ''}
         ${stillThere === true ? `<p>Le piano est <strong>encore là</strong> ✅</p>` : ''}
         ${payload.quality ? `<p>État actuel : <strong>${escapeHtml(payload.quality)}</strong>.</p>` : ''}
@@ -273,7 +274,7 @@ export function renderMail(
         subject,
         url,
         html: shell(subject, body, { label: 'Voir le piano', url }),
-        pushTitle: sanitizeHeader(`MAJ sur un piano que tu suis 🔖`),
+        pushTitle: sanitizeHeader(`MAJ d’un piano favori 🔖`),
         pushBody: sanitizeHeader(`@${updaterPseudo} · ${pianoAddress}`)
       }
     }
