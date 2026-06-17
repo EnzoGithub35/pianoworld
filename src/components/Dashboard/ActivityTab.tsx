@@ -37,7 +37,7 @@ function StatCard({
         <Icon className="h-3.5 w-3.5" />
         {label}
       </div>
-      <div className="mt-1.5 font-display text-2xl font-bold tracking-tight">{value}</div>
+      <div className="font-display mt-1.5 text-2xl font-bold tracking-tight">{value}</div>
       {hint && <div className="mt-0.5 text-[11px] text-muted-foreground">{hint}</div>}
     </div>
   )
@@ -213,7 +213,7 @@ export function ActivityTab() {
                         <span className="font-semibold">
                           @{v.author?.pseudo ?? 'inconnu'}
                         </span>{' '}
-                        <span className="text-muted-foreground">a joué ici</span>
+                        <span className="text-muted-foreground">y est passé</span>
                       </p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
                         {v.piano.address}

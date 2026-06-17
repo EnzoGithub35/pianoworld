@@ -240,7 +240,9 @@ export function SessionDialog({
         <p className="text-xs text-muted-foreground">
           {visibility === 'friends'
             ? 'Seuls tes amis verront ton créneau et recevront une notification.'
-            : 'Les autres pianistes verront ton créneau. Tes amis recevront une notification.'}
+            : friendsCount === 0
+              ? 'Les autres pianistes verront ton créneau. Ajoute des amis pour qu’ils soient notifiés la prochaine fois.'
+              : 'Les autres pianistes verront ton créneau. Tes amis recevront une notification.'}
         </p>
 
         <div className="flex gap-2">

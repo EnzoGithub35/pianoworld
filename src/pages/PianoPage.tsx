@@ -57,13 +57,20 @@ export function PianoPage() {
 
   const isOwner = user?.id === piano.created_by
 
+  // Fallback "Retour" si on est arrivé par deep-link partagé (history.length <= 1)
+  // → on évite que `navigate(-1)` sorte de l'app.
+  const handleBack = () => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate('/')
+  }
+
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background">
       <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background/95 px-3 py-3 backdrop-blur">
         <button
-          onClick={() => navigate(-1)}
+          onClick={handleBack}
           aria-label="Retour"
-          className="rounded-full p-1.5 hover:bg-accent"
+          className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -75,14 +82,14 @@ export function PianoPage() {
             <button
               onClick={() => setEditing(true)}
               aria-label="Modifier"
-              className="rounded-full p-1.5 hover:bg-accent"
+              className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
             >
               <Pencil className="h-4 w-4" />
             </button>
             <button
               onClick={() => setDeleting(true)}
               aria-label="Supprimer"
-              className="rounded-full p-1.5 text-destructive hover:bg-destructive/10"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-destructive hover:bg-destructive/10"
             >
               <Trash2 className="h-4 w-4" />
             </button>

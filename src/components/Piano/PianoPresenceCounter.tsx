@@ -49,7 +49,9 @@ export function PianoPresenceCounter({
 
   const stack = live.slice(0, PRESENCE_AVATAR_STACK_LIMIT - 1)
   const overflow = live.length - stack.length
-  const label = `${live.length} session${live.length > 1 ? 's' : ''} en cours`
+  // Wording côté newcomer : "pianiste" vs "session" technique.
+  // Le mot "session" est réservé à l'UI de création (SessionDialog "J'y vais").
+  const label = `${live.length} pianiste${live.length > 1 ? 's' : ''} ${live.length > 1 ? 'jouent' : 'joue'} en ce moment`
 
   if (variant === 'popup') {
     return (

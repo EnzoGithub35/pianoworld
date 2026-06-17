@@ -3,7 +3,9 @@ import { LayoutDashboard, Map as MapIcon, Search, Settings } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const items = [
-  { to: '/dashboard', icon: LayoutDashboard, label: 'Accueil' },
+  // Label "Activité" plutôt que "Accueil" pour matcher le 1er onglet du Dashboard
+  // (cohérence mentale : NavBar item = Dashboard tab par défaut).
+  { to: '/dashboard', icon: LayoutDashboard, label: 'Activité' },
   { to: '/', icon: MapIcon, label: 'Carte', end: true },
   { to: '/search', icon: Search, label: 'Recherche' },
   { to: '/settings', icon: Settings, label: 'Paramètres' }
@@ -24,9 +26,7 @@ export function NavBar() {
             className={({ isActive }) =>
               cn(
                 'group relative flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',
-                isActive
-                  ? 'text-primary'
-                  : 'text-muted-foreground hover:text-foreground'
+                isActive ? 'text-primary' : 'text-muted-foreground hover:text-foreground'
               )
             }
           >

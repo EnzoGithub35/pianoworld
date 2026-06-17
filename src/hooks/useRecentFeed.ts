@@ -77,6 +77,9 @@ type RawSessionRow = PianoSession & {
 export function useRecentFeed(limit = RECENT_FEED_LIMIT) {
   return useQuery({
     queryKey: ['recent-feed', limit],
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<FeedEvent[]> => {
       const since36hPast = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString()
       const until36hFuture = new Date(Date.now() + 36 * 60 * 60 * 1000).toISOString()
@@ -133,10 +136,20 @@ export function useRecentFeed(limit = RECENT_FEED_LIMIT) {
 
       const events: FeedEvent[] = []
       for (const p of (pianosRes.data ?? []) as unknown as RawPianoRow[]) {
-        events.push({ kind: 'new', id: `new-${p.id}`, created_at: p.created_at, piano: p })
+        events.push({
+          kind: 'new',
+          id: `new-${p.id}`,
+          created_at: p.created_at,
+          piano: p
+        })
       }
       for (const u of (updatesRes.data ?? []) as unknown as RawUpdateRow[]) {
-        events.push({ kind: 'update', id: `upd-${u.id}`, created_at: u.created_at, update: u })
+        events.push({
+          kind: 'update',
+          id: `upd-${u.id}`,
+          created_at: u.created_at,
+          update: u
+        })
       }
       for (const v of (visitsRes.data ?? []) as unknown as RawVisitRow[]) {
         events.push({
@@ -154,9 +167,7 @@ export function useRecentFeed(limit = RECENT_FEED_LIMIT) {
           session: s
         })
       }
-      return events
-        .sort((a, b) => (a.created_at > b.created_at ? -1 : 1))
-        .slice(0, limit)
+      return events.sort((a, b) => (a.created_at > b.created_at ? -1 : 1)).slice(0, limit)
     }
   })
 }

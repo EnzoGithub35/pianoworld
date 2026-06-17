@@ -14,7 +14,8 @@ export function MapPage() {
         type="button"
         onClick={() => setAddOpen(true)}
         aria-label="Ajouter un piano"
-        className="absolute bottom-4 right-4 z-[500] flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-90"
+        className="absolute right-4 z-[500] flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-90"
+        style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
       >
         <Plus className="h-7 w-7" />
       </button>

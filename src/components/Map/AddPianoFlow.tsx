@@ -66,9 +66,12 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
 
-  /** Le form est "dirty" si l'utilisateur a touché à au moins un champ significatif. */
-  const isDirty =
-    !!coords || address.trim().length > 0 || comment.trim().length > 0 || !!photoFile
+  /**
+   * Le form est "dirty" si l'utilisateur a touché à au moins un champ texte ou photo.
+   * Note : on N'inclut PAS `coords` seul — un user qui ouvre le flow et pose juste
+   * la position sans rien d'autre ne devrait pas se voir demander une confirmation.
+   */
+  const isDirty = address.trim().length > 0 || comment.trim().length > 0 || !!photoFile
 
   useEffect(() => {
     if (!coords) return
@@ -104,7 +107,13 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
       setCoords(c)
       setCenter([c.lat, c.lng])
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Position indisponible'))
+      // Géoloc refusée ou indisponible → CTA fallback clair.
+      toast.error(
+        getErrorMessage(
+          err,
+          'Position indisponible. Tu peux toucher la carte ou taper une adresse.'
+        )
+      )
     }
   }
 
@@ -180,12 +189,15 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="animate-slide-up-modal fixed inset-0 z-[1000] flex flex-col bg-background">
-      <header className="flex items-center justify-between border-b border-border p-4">
+      <header
+        className="flex items-center justify-between border-b border-border px-4 py-3"
+        style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+      >
         <h2 className="text-lg font-semibold">Ajouter un piano</h2>
         <button
           onClick={requestClose}
           aria-label="Fermer"
-          className="rounded-full p-1.5 hover:bg-accent"
+          className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
         >
           <X className="h-6 w-6" />
         </button>

@@ -24,9 +24,15 @@ export function PianoActivity({ pianoId }: { pianoId: string }) {
         <VisitorStack pianoId={pianoId} />
       </div>
 
-      <div className="flex gap-2 border-t border-border pt-4">
-        <VisitButton pianoId={pianoId} />
-        <SessionButton pianoId={pianoId} />
+      <div className="space-y-2 border-t border-border pt-4">
+        <div className="flex gap-2">
+          <VisitButton pianoId={pianoId} />
+          <SessionButton pianoId={pianoId} />
+        </div>
+        <p className="text-[11px] text-muted-foreground">
+          « J&apos;y suis passé » = je l&apos;ai vu récemment. « J&apos;y vais » = je vais
+          y jouer (créneau visible aux autres).
+        </p>
       </div>
     </section>
   )
