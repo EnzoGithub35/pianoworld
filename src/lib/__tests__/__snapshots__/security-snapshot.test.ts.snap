@@ -47,7 +47,7 @@ exports[`Security surface snapshot > Functions SECURITY DEFINER (sécurité-sens
     "language": "plpgsql",
     "name": "delete_my_account",
     "returns": "void",
-    "searchPath": "public, auth",
+    "searchPath": "public, auth, extensions",
     "security": "definer",
   },
   {

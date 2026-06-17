@@ -110,9 +110,16 @@ export function EditPianoForm({ piano, onClose }: { piano: Piano; onClose: () =>
 
   return (
     <div className="fixed inset-0 z-[1000] flex flex-col bg-background">
-      <header className="flex items-center justify-between border-b border-border p-4">
+      <header
+        className="flex items-center justify-between border-b border-border px-4 py-3"
+        style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
+      >
         <h2 className="text-lg font-semibold">Modifier le piano</h2>
-        <button onClick={onClose} aria-label="Fermer">
+        <button
+          onClick={onClose}
+          aria-label="Fermer"
+          className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
+        >
           <X className="h-6 w-6" />
         </button>
       </header>

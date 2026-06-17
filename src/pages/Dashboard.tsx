@@ -88,7 +88,7 @@ export function Dashboard() {
           </TabsTrigger>
           <TabsTrigger value="requests">
             <span className="flex items-center gap-1.5">
-              Mes demandes
+              Support
               {newReplyCount > 0 && <Badge variant="primary">{newReplyCount}</Badge>}
             </span>
           </TabsTrigger>

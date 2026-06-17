@@ -222,7 +222,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!profile || !profile.banned_at) return
     logger.warn('auth.banned', 'kicking banned user', { userId: profile.id })
-    toast.error('Ce compte a été suspendu', { id: 'banned' })
+    toast.error(
+      'Ce compte a été suspendu. Pour toute question, contacte enzo.reine35@gmail.com',
+      { id: 'banned', duration: 10000 }
+    )
     void supabase.auth.signOut()
   }, [profile])
 

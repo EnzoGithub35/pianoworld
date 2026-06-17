@@ -23,15 +23,19 @@ export function Dialog({
 
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-[1100] flex items-end justify-center bg-black/40 backdrop-blur-sm animate-fade-in sm:items-center">
+    <div className="animate-fade-in fixed inset-0 z-[1100] flex items-end justify-center bg-black/40 backdrop-blur-sm sm:items-center">
+      {/* Backdrop : décoratif pour l'AT (un seul "Fermer" exposé via le bouton X
+          + l'Escape déjà géré ligne 18). aria-hidden + tabIndex=-1 pour éviter
+          le bruit screen reader. */}
       <button
         type="button"
-        aria-label="Fermer"
+        aria-hidden="true"
+        tabIndex={-1}
         className="absolute inset-0 h-full w-full cursor-default"
         onClick={onClose}
       />
       <div
-        className="relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-5 shadow-2xl animate-slide-up-modal sm:rounded-2xl sm:animate-scale-in"
+        className="animate-slide-up-modal sm:animate-scale-in relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-5 shadow-2xl sm:rounded-2xl"
         style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
       >
         <div className="mb-4 flex items-center justify-between">
@@ -40,7 +44,7 @@ export function Dialog({
             type="button"
             onClick={onClose}
             aria-label="Fermer"
-            className="rounded-full p-1 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="h-5 w-5" />
           </button>

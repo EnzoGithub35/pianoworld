@@ -36,13 +36,20 @@ export function UserPage() {
 
   const count = pianos?.length ?? 0
 
+  // Fallback "Retour" : si on est arrivé par deep-link (history.length <= 1)
+  // → /dashboard?tab=friends plutôt que sortir de l'app.
+  const handleBack = () => {
+    if (window.history.length > 1) navigate(-1)
+    else navigate('/dashboard?tab=friends')
+  }
+
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background">
       <header className="sticky top-0 z-10 flex items-center gap-2 border-b border-border bg-background/95 px-4 py-3 backdrop-blur">
         <button
-          onClick={() => navigate(-1)}
+          onClick={handleBack}
           aria-label="Retour"
-          className="rounded-full p-1.5 hover:bg-accent"
+          className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -64,7 +71,10 @@ export function UserPage() {
             </p>
           </div>
         </section>
-        <section>
+        <section className="space-y-1.5">
+          <p className="text-xs text-muted-foreground">
+            Devenez amis pour voir vos sessions friends-only respectives.
+          </p>
           <AddFriendButton targetUserId={profile.id} targetPseudo={profile.pseudo} />
         </section>
 

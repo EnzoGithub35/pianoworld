@@ -49,6 +49,8 @@ export function useCommunityFeed() {
   return useQuery({
     queryKey: ['community-feed'],
     staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
     queryFn: async (): Promise<CommunityEvent[]> => {
       const since = new Date(
         Date.now() - COMMUNITY_PAST_DAYS * 24 * 60 * 60 * 1000

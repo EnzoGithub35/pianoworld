@@ -986,6 +986,9 @@ begin
   if p is null or char_length(p) = 0 then
     return false;
   end if;
+  -- v7+ : rate-limit dur 10/h pour stopper le brute-force online.
+  -- Référence late-bound vers enforce_caller_rate_limit (déclaré section 15.g).
+  perform public.enforce_caller_rate_limit('verify_password', 10, '1 hour'::interval);
   select encrypted_password into v_hash
   from auth.users
   where id = auth.uid();
@@ -1294,10 +1297,11 @@ create or replace function public.delete_my_account(p_password text default null
 returns void
 language plpgsql
 security definer
-set search_path = public, auth
+set search_path = public, auth, extensions
 as $$
 declare
   uid uuid := auth.uid();
+  v_email text;
 begin
   if uid is null then
     raise exception 'not authenticated';
@@ -1305,6 +1309,17 @@ begin
   if p_password is null or not public.verify_my_password(p_password) then
     raise exception 'invalid_password';
   end if;
+  -- Audit log : trace l'événement avec un hash de l'email (forensic-safe,
+  -- pas un registre RGPD-incompatible). Permet de détecter une suppression
+  -- de masse anormale (botnet, attaquant via session volée).
+  select email into v_email from auth.users where id = uid;
+  perform public.write_audit_log(
+    'delete_my_account_self',
+    uid,
+    jsonb_build_object(
+      'email_sha256', encode(extensions.digest(coalesce(v_email, ''), 'sha256'), 'hex')
+    )
+  );
   delete from auth.users where id = uid;
 end$$;
 
@@ -2792,6 +2807,9 @@ begin
       from public.pianos pn
       left join public.profiles prof on prof.id = pn.created_by
       where pn.is_deleted = false
+        -- v7+ : exclut les pianos dont l'auteur est banni (mais garde ceux dont
+        -- l'auteur a supprimé son compte = left join null → autorisé).
+        and (prof.id is null or prof.banned_at is null)
         and (
           lower(public.unaccent_immutable(pn.address)) like '%' || v_q || '%'
           or lower(public.unaccent_immutable(pn.comment)) like '%' || v_q || '%'
@@ -3054,4 +3072,17 @@ where id = (select id from auth.users where email = 'enzo.reine35@gmail.com')
 --     $$);
 --     select cron.schedule('notif-purge', '17 3 * * *', $$
 --       select public.purge_old_notifications();
+--     $$);
+--
+-- (6) Purges hebdomadaires des tables de dedup/cooldown (v6+).
+--   Tables : friendship_rejections (cooldown 30j anti-stalking) +
+--   friend_arriving_dedup (dedup horaire notifs sessions). Sans ces purges,
+--   les tables grossissent indéfiniment (pas d'expiration via TTL native PG).
+--     select cron.schedule('friendship-rejections-purge', '23 3 * * 0', $$
+--       delete from public.friendship_rejections
+--       where rejected_at < now() - interval '30 days';
+--     $$);
+--     select cron.schedule('friend-arriving-dedup-purge', '29 3 * * 0', $$
+--       delete from public.friend_arriving_dedup
+--       where last_queued_at < now() - interval '7 days';
 --     $$);
