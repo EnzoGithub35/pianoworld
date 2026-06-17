@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import {
   CalendarPlus,
   Footprints,
+  Map as MapIcon,
   MapPin,
   Music,
   Plus,
@@ -100,13 +101,18 @@ export function ActivityTab() {
           <EmptyState
             icon={<Sparkles className="h-6 w-6" />}
             title="Aucune activité pour l'instant"
-            description="Ouvre la carte et ajoute le premier piano de la communauté."
+            description={
+              stats?.total === 0
+                ? 'Sois le premier à cartographier un piano près de chez toi !'
+                : 'Ouvre la carte et participe à la communauté.'
+            }
             action={
               <Link
                 to="/"
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
               >
-                Aller à la carte →
+                <MapIcon className="h-4 w-4" />
+                {stats?.total === 0 ? 'Ajouter le premier piano' : 'Ouvrir la carte'}
               </Link>
             }
           />

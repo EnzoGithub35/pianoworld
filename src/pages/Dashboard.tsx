@@ -9,6 +9,8 @@ import { MyRequestsTab } from '@/components/Requests/MyRequestsTab'
 import { FriendsTab } from '@/components/Friends/FriendsTab'
 import { useMyRequests } from '@/hooks/useUserRequests'
 import { usePendingReceivedCount } from '@/hooks/useFriends'
+import { useEvents } from '@/hooks/useEvents'
+import { useAuth } from '@/contexts/AuthContext'
 import { REQUESTS_LAST_SEEN_KEY } from '@/lib/constants'
 
 /**
@@ -39,6 +41,11 @@ export function Dashboard() {
   const [tab, setTab] = useState<DashboardTab>(initialTab)
   const { data: myRequests } = useMyRequests()
   const pendingFriendsCount = usePendingReceivedCount()
+  const { isAdmin } = useAuth()
+  const { data: events } = useEvents(false)
+  // Masque l'onglet Évènements aux non-admins si aucun event n'existe.
+  // Les admins voient toujours la tab (pour pouvoir en créer).
+  const showEventsTab = isAdmin || (events && events.length > 0)
 
   // Sync ?tab=… vers state quand user clique un deep-link
   useEffect(() => {
@@ -77,7 +84,7 @@ export function Dashboard() {
         <TabsList scrollable className="bg-background px-2">
           <TabsTrigger value="activity">Activité</TabsTrigger>
           <TabsTrigger value="community">Communauté</TabsTrigger>
-          <TabsTrigger value="events">Évènements</TabsTrigger>
+          {showEventsTab && <TabsTrigger value="events">Évènements</TabsTrigger>}
           <TabsTrigger value="friends">
             <span className="flex items-center gap-1.5">
               Amis

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { AppShell } from '@/components/Layout/AppShell'
 import { SplashScreen } from '@/components/Layout/SplashScreen'
@@ -12,8 +12,12 @@ import { RequireAdmin } from '@/components/Layout/RequireAdmin'
  * - AuthPage est sur le chemin critique (1ère visite), mais chargée seule
  *   sans le reste, donc plus rapide quand non connecté.
  */
-const AuthPage = lazy(() => import('@/pages/AuthPage').then((m) => ({ default: m.AuthPage })))
-const MapPage = lazy(() => import('@/pages/MapPage').then((m) => ({ default: m.MapPage })))
+const AuthPage = lazy(() =>
+  import('@/pages/AuthPage').then((m) => ({ default: m.AuthPage }))
+)
+const MapPage = lazy(() =>
+  import('@/pages/MapPage').then((m) => ({ default: m.MapPage }))
+)
 const PianoPage = lazy(() =>
   import('@/pages/PianoPage').then((m) => ({ default: m.PianoPage }))
 )
@@ -38,8 +42,16 @@ const AdminPage = lazy(() =>
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
+  const location = useLocation()
   if (loading) return <SplashScreen />
-  if (!user) return <Navigate to="/auth" replace />
+  if (!user) {
+    // Préserve la destination (pathname + search) pour que l'AuthPage redirige
+    // l'user vers la page demandée après signIn. Sans ça, un newcomer qui clique
+    // un lien de notif `/dashboard?tab=friends` et n'est pas loggué atterrit
+    // sur `/` après login et perd sa destination.
+    const from = location.pathname + location.search + location.hash
+    return <Navigate to="/auth" replace state={{ from }} />
+  }
   return <>{children}</>
 }
 

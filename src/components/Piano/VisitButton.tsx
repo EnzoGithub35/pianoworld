@@ -52,7 +52,7 @@ export function VisitButton({ pianoId }: { pianoId: string }) {
       onClick={handleClick}
     >
       <Footprints className="h-4 w-4" />
-      {cooldown ? 'Enregistré' : "J'y suis passé"}
+      {cooldown ? 'Enregistré' : "J'y suis allé jouer"}
     </Button>
   )
 }

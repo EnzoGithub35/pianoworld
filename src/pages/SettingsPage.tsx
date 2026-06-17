@@ -1,7 +1,9 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import toast from 'react-hot-toast'
 import {
   ChevronRight,
+  HelpCircle,
   KeyRound,
   LogOut,
   Moon,
@@ -20,6 +22,7 @@ import { DeleteAccountDialog } from '@/components/Settings/DeleteAccountDialog'
 import { ExportDataButton } from '@/components/Settings/ExportDataButton'
 import { ChangePasswordDialog } from '@/components/Settings/ChangePasswordDialog'
 import { NotificationPreferences } from '@/components/Settings/NotificationPreferences'
+import { TUTORIAL_STORAGE_KEY } from '@/lib/constants'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -91,6 +94,7 @@ function Row({
 export function SettingsPage() {
   const { user, profile, signOut, isAdmin, isSuperadmin } = useAuth()
   const { theme, toggleTheme } = useTheme()
+  const navigate = useNavigate()
   const [editPseudo, setEditPseudo] = useState(false)
   const [deleteAccount, setDeleteAccount] = useState(false)
   const [changePassword, setChangePassword] = useState(false)
@@ -103,6 +107,16 @@ export function SettingsPage() {
       : friendsCount > 0
         ? `${friendsCount}`
         : undefined
+
+  const replayTutorial = () => {
+    try {
+      localStorage.removeItem(TUTORIAL_STORAGE_KEY)
+    } catch {
+      // best-effort
+    }
+    toast('Tutoriel relancé', { icon: '🎹' })
+    navigate('/')
+  }
 
   return (
     <div className="flex h-full flex-col overflow-y-auto bg-background">
@@ -156,6 +170,10 @@ export function SettingsPage() {
             label={theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
             onClick={toggleTheme}
           />
+        </Section>
+
+        <Section title="Aide">
+          <Row icon={HelpCircle} label="Revoir le tutoriel" onClick={replayTutorial} />
         </Section>
 
         <Section title="Données (RGPD)">

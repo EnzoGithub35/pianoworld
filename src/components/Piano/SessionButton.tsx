@@ -9,7 +9,7 @@ export function SessionButton({ pianoId }: { pianoId: string }) {
     <>
       <Button className="flex-1 gap-2" onClick={() => setOpen(true)}>
         <CalendarPlus className="h-4 w-4" />
-        J'y vais
+        Je prévois d'y jouer
       </Button>
       <SessionDialog open={open} pianoId={pianoId} onClose={() => setOpen(false)} />
     </>

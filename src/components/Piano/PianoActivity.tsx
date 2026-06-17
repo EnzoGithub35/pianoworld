@@ -30,8 +30,8 @@ export function PianoActivity({ pianoId }: { pianoId: string }) {
           <SessionButton pianoId={pianoId} />
         </div>
         <p className="text-[11px] text-muted-foreground">
-          « J&apos;y suis passé » = je l&apos;ai vu récemment. « J&apos;y vais » = je vais
-          y jouer (créneau visible aux autres).
+          « J&apos;y suis allé jouer » = enregistrer un passage. « Je prévois d&apos;y
+          jouer » = planifier un créneau visible aux autres.
         </p>
       </div>
     </section>
