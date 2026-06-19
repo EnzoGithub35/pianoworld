@@ -467,14 +467,20 @@ Important pour le free tier Sentry : si on leak des emails users vers Sentry, c'
 | Cross-request race friend            | `send_friend_request` advisory lock canonical pair + auto-accept croisé                                                            |
 | Cardinality leak (count vs items)    | `get_active_piano_counts` applique le même filtre visibility que `list_piano_presence`                                             |
 
-### Backlog (P2/P3)
+### Sprint 7 sécu — livré
 
-- **A.1.2 chiffrement `push_subscriptions`** : `p256dh`/`auth_secret` stockées en clair. Vault Supabase nécessaire (pas dispo free tier).
-- **A.5 CSP nonces** : remplacer `'unsafe-inline'` par nonces générés par Vercel Edge middleware.
-- **A.6.3 2FA TOTP admin** : Supabase MFA disponible mais non câblé pour admin uniquement.
-- **A.6.4 rate-limit signup par IP** : Supabase auth rate-limit existe mais pas configurable côté projet ; Edge Function dédiée à faire.
-- **A.7 EXIF strip upload** : les photos uploadées peuvent contenir GPS metadata. Edge Function `process-photo` à créer (download → exifr strip → re-upload).
-- **B.4 tests pgTAP RLS** : `supabase test db` pour valider les policies par INSERT/SELECT depuis différents rôles.
+- ✅ **A.7 EXIF strip upload** : `compressPhoto` re-encode l'image en JPEG via canvas avec `preserveExif: false` explicite ([src/lib/photo.ts](../src/lib/photo.ts)). Le re-encode élimine GPS/device/IPTC/XMP. Test régression dans [photo.test.ts](../src/lib/__tests__/photo.test.ts) vérifie que la lib est bien appelée avec le flag.
+- ✅ **A.6.4 rate-limit signup par IP** : Edge Function [`signup-protected`](../supabase/functions/signup-protected/index.ts) hash l'IP (SHA-256 + sel env) → RPC `check_signup_ip_allowed` (advisory lock atomic count+insert) → 5 tentatives / 24h. Fail-open si Edge Function indispo (Supabase Auth rate-limit reste actif). Frontend câblé dans `AuthContext.signUp`. Purge nightly pg_cron documentée.
+
+### Backlog (P1/P2/P3)
+
+- **A.1.2 chiffrement `push_subscriptions`** (P3) : `p256dh`/`auth_secret` stockées en clair. Vault Supabase nécessaire (pas dispo free tier).
+- **A.5 CSP nonces** (P1, Large) : retirer `'unsafe-inline'` du `script-src` + `style-src`. **Scope précis :**
+  - **`style-src`** : 15 occurrences de `style={{...}}` inline dans le code (safe-area-inset-\* sur AppShell/NavBar/Tutorial/Dialog/banners + QualityBadge dynamic backgroundColor). Soit migrer vers Tailwind arbitrary classes `[padding-bottom:env(safe-area-inset-bottom)]` + CSS vars pour QualityBadge, soit accepter hashes CSP (incompatible avec valeurs runtime).
+  - **`script-src`** : Vite injecte des scripts inline au build (entry chunks) + Sentry init inline. Nonces générés par Vercel Edge middleware (au request time) injectés dans le HTML servi + dans le header CSP. Plugin Vite ou `vite-plugin-csp` pour injecter `nonce="__NONCE__"` au build, substitué par l'Edge middleware au runtime.
+  - **Effort réel** : multi-jours (refactor 15 inline styles + Vercel middleware + tests Lighthouse + vérif Sentry).
+- **A.6.3 2FA TOTP admin** (P3) : Supabase MFA disponible mais non câblé pour admin uniquement.
+- **B.4 tests pgTAP RLS** (P2) : `supabase test db` pour valider les policies par INSERT/SELECT depuis différents rôles.
 
 ### Non couvert (out of scope)
 
