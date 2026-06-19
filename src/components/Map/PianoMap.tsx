@@ -65,7 +65,7 @@ function PianoPopup({
           className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20"
         >
           <Music className="h-3 w-3" />
-          {activeCount} session{activeCount > 1 ? 's' : ''} en cours
+          {activeCount} créneau{activeCount > 1 ? 'x' : ''} en cours
         </Link>
       )}
       <p className="text-xs text-muted-foreground">

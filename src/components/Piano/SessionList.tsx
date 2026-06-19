@@ -66,15 +66,13 @@ function ActiveCard({
           )}{' '}
           <span className="text-muted-foreground">joue ici</span>
         </p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Encore ~{remaining} min
-        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">Encore ~{remaining} min</p>
       </div>
       {isOwner && (
         <button
           onClick={() => onCancel(session.id)}
           className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"
-          aria-label="Annuler ma session"
+          aria-label="Annuler mon créneau"
         >
           <X className="h-4 w-4" />
         </button>
@@ -116,7 +114,7 @@ function UpcomingCard({
         <button
           onClick={() => onCancel(session.id)}
           className="rounded-md p-1.5 text-muted-foreground hover:bg-accent"
-          aria-label="Annuler ma session"
+          aria-label="Annuler mon créneau"
         >
           <X className="h-4 w-4" />
         </button>
@@ -154,7 +152,7 @@ export function SessionList({ pianoId }: { pianoId: string }) {
         throw error
       }
       logger.info('session.cancel', 'success', { sessionId })
-      toast.success('Session annulée')
+      toast.success('Créneau annulé')
       await queryClient.invalidateQueries({ queryKey: ['piano-sessions', pianoId] })
       await queryClient.invalidateQueries({ queryKey: ['active-piano-ids'] })
     } catch (err) {
@@ -165,7 +163,7 @@ export function SessionList({ pianoId }: { pianoId: string }) {
   }
 
   if (isLoading) {
-    return <p className="text-xs text-muted-foreground">Chargement des sessions…</p>
+    return <p className="text-xs text-muted-foreground">Chargement des créneaux…</p>
   }
 
   if (active.length === 0 && upcoming.length === 0) {
@@ -200,8 +198,7 @@ export function SessionList({ pianoId }: { pianoId: string }) {
       {upcoming.length > 0 && (
         <section className="space-y-2">
           <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            <Calendar className="h-3.5 w-3.5 text-primary" />
-            À venir
+            <Calendar className="h-3.5 w-3.5 text-primary" />À venir
           </h3>
           <ul className="space-y-2">
             {upcoming.map((s) => (

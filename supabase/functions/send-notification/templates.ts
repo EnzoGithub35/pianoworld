@@ -161,7 +161,7 @@ export function renderMail(
       const subject = sanitizeHeader("Quelqu'un d'autre joue au même moment !")
       const body = `
         <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
-        <p>Un autre pianiste vient de réserver une session sur le piano <strong>${escapeHtml(payload.piano_address)}</strong> au même moment que toi.</p>
+        <p>Un autre pianiste vient de réserver un créneau sur le piano <strong>${escapeHtml(payload.piano_address)}</strong> au même moment que toi.</p>
         <p>Leur créneau : <strong>${escapeHtml(formatDateFr(payload.their_starts_at as string))}</strong> pendant <strong>${escapeHtml(payload.their_duration_min)} min</strong>.</p>
         <p>Bonne occasion de jouer à quatre mains 🎹🎹 ou de décaler ton créneau.</p>
       `
@@ -244,7 +244,7 @@ export function renderMail(
       const body = `
         <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
         <p><strong>@${escapeHtml(requesterPseudo)}</strong> souhaite t'ajouter comme ami.</p>
-        <p>Si vous êtes amis, tu pourras voir ses sessions privées et il pourra voir les tiennes (si tu les marques "amis uniquement").</p>
+        <p>Si vous êtes amis, tu pourras voir ses créneaux privés et il pourra voir les tiens (si tu les marques "amis uniquement").</p>
       `
       return {
         subject,
@@ -292,7 +292,7 @@ export function renderMail(
       `
         : `
         <p>Salut <strong>@${escapeHtml(recipientPseudo)}</strong>,</p>
-        <p><strong>@${escapeHtml(otherPseudo)}</strong> a accepté ta demande d'ami. Vous pouvez maintenant voir vos sessions friends-only respectives.</p>
+        <p><strong>@${escapeHtml(otherPseudo)}</strong> a accepté ta demande d'ami. Vous pouvez maintenant voir vos créneaux friends-only respectifs.</p>
       `
       return {
         subject,
