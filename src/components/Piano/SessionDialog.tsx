@@ -11,9 +11,13 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useFriends } from '@/hooks/useFriends'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
 import { sessionFormSchema } from '@/lib/schemas'
-import { SESSION_DURATION_OPTIONS, SESSION_FUTURE_DAYS_MAX } from '@/lib/constants'
+import {
+  RATE_LIMITS,
+  SESSION_DURATION_OPTIONS,
+  SESSION_FUTURE_DAYS_MAX
+} from '@/lib/constants'
 import { cn } from '@/lib/utils'
 import type { PianoSessionVisibility } from '@/types/database'
 
@@ -121,7 +125,12 @@ export function SessionDialog({
       await queryClient.invalidateQueries({ queryKey: ['piano-active-counts'] })
       onClose()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Création échouée'))
+      toast.error(
+        getFriendlyErrorMessage(err, {
+          fallback: 'Création échouée',
+          rateLimitLabels: RATE_LIMITS
+        })
+      )
     } finally {
       setSubmitting(false)
     }

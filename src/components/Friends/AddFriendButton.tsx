@@ -4,7 +4,7 @@ import { UserPlus, UserCheck, Check, X, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useFriendStatus, useFriendActions, useFriendRequests } from '@/hooks/useFriends'
 import { useAuth } from '@/contexts/AuthContext'
-import { getErrorMessage, isRateLimitError } from '@/lib/errors'
+import { getErrorMessage, getFriendlyErrorMessage, isRateLimitError } from '@/lib/errors'
 import { RemoveFriendDialog } from './RemoveFriendDialog'
 
 /**
@@ -87,7 +87,9 @@ export function AddFriendButton({
         toast.error('Tu as envoyé trop de demandes aujourd’hui. Réessaie demain.')
         return
       }
-      toast.error(getErrorMessage(err, "Impossible d'envoyer la demande"))
+      toast.error(
+        getFriendlyErrorMessage(err, { fallback: "Impossible d'envoyer la demande" })
+      )
     }
   }
 
@@ -157,7 +159,9 @@ export function AddFriendButton({
               await acceptRequest.mutateAsync(pendingId)
               toast.success(`Tu es maintenant ami avec @${targetPseudo}`)
             } catch (err) {
-              toast.error(getErrorMessage(err, "Erreur lors de l'acceptation"))
+              toast.error(
+                getFriendlyErrorMessage(err, { fallback: "Erreur lors de l'acceptation" })
+              )
             }
           }}
         >
@@ -174,7 +178,9 @@ export function AddFriendButton({
               await rejectRequest.mutateAsync(pendingId)
               toast.success('Demande refusée')
             } catch (err) {
-              toast.error(getErrorMessage(err, 'Erreur lors du refus'))
+              toast.error(
+                getFriendlyErrorMessage(err, { fallback: 'Erreur lors du refus' })
+              )
             }
           }}
         >

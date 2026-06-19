@@ -9,8 +9,8 @@ import { Textarea } from '@/components/ui/Textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
-import { PIANO_COMMENT_MAX } from '@/lib/constants'
+import { getFriendlyErrorMessage } from '@/lib/errors'
+import { PIANO_COMMENT_MAX, RATE_LIMITS } from '@/lib/constants'
 import { uploadPianoPhoto, deletePianoPhoto, validatePhotoFile } from '@/lib/photo'
 import { pianoFormSchema } from '@/lib/schemas'
 import {
@@ -102,7 +102,12 @@ export function EditPianoForm({ piano, onClose }: { piano: Piano; onClose: () =>
       if (newPhotoUrl) {
         await deletePianoPhoto(newPhotoUrl).catch(() => {})
       }
-      toast.error(getErrorMessage(err, 'Erreur de mise à jour'))
+      toast.error(
+        getFriendlyErrorMessage(err, {
+          fallback: 'Erreur de mise à jour',
+          rateLimitLabels: RATE_LIMITS
+        })
+      )
     } finally {
       setSubmitting(false)
     }

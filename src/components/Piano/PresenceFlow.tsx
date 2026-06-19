@@ -7,7 +7,8 @@ import { Dialog } from '@/components/ui/Dialog'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
+import { RATE_LIMITS } from '@/lib/constants'
 import { SessionDialog } from './SessionDialog'
 
 /**
@@ -47,7 +48,9 @@ export function PresenceFlow({ pianoId }: { pianoId: string }) {
       await qc.invalidateQueries({ queryKey: ['recent-feed'] })
       setChooseOpen(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Erreur'))
+      toast.error(
+        getFriendlyErrorMessage(err, { fallback: 'Erreur', rateLimitLabels: RATE_LIMITS })
+      )
     } finally {
       setSubmitting(false)
     }

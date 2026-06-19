@@ -11,7 +11,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { FormError } from '@/components/ui/FormError'
 import { emailSearchSchema, type EmailSearchValues } from '@/lib/schemas'
 import { useEmailSearch } from '@/hooks/useEmailSearch'
-import { getErrorMessage, isRateLimitError } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
 import { RATE_LIMITS } from '@/lib/constants'
 import type { UserSearchResult } from '@/types/database'
 
@@ -61,9 +61,7 @@ export function EmailSearchDialog({
     }
   }
 
-  const rateLimitLimit = RATE_LIMITS.user_search_email
   const error = search.error
-  const isRateLimit = error && isRateLimitError(error)
 
   return (
     <Dialog open={open} onClose={handleClose} title="Chercher par email">
@@ -86,8 +84,9 @@ export function EmailSearchDialog({
         </div>
 
         <p className="text-[11px] text-muted-foreground">
-          Limite : {rateLimitLimit.count} recherches par {rateLimitLimit.windowLabel}.
-          L'email reste privé — seul le pseudo est révélé si la personne existe.
+          Limite : {RATE_LIMITS.user_search_email.count} recherches par{' '}
+          {RATE_LIMITS.user_search_email.windowLabel}. L'email reste privé — seul le
+          pseudo est révélé si la personne existe.
         </p>
 
         <Button
@@ -132,10 +131,14 @@ export function EmailSearchDialog({
       )}
 
       {error && (
-        <div className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-          {isRateLimit
-            ? `Tu as atteint la limite (${rateLimitLimit.count}/${rateLimitLimit.windowLabel}). Réessaie demain.`
-            : getErrorMessage(error, 'Erreur lors de la recherche')}
+        <div
+          role="alert"
+          className="mt-4 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive"
+        >
+          {getFriendlyErrorMessage(error, {
+            fallback: 'Erreur lors de la recherche',
+            rateLimitLabels: RATE_LIMITS
+          })}
         </div>
       )}
     </Dialog>

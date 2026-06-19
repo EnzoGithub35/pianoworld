@@ -12,7 +12,7 @@ import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { profileNamesSchema, type ProfileNamesValues } from '@/lib/schemas'
 import { FIRST_NAME_MAX, LAST_NAME_MAX } from '@/lib/constants'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
 import { useAuth } from '@/contexts/AuthContext'
 
 /**
@@ -153,8 +153,10 @@ export function EditNamesDialog({
         </div>
 
         {update.error && (
-          <p className="text-xs text-destructive">
-            {getErrorMessage(update.error, 'Erreur lors de la mise à jour')}
+          <p role="alert" className="text-xs text-destructive">
+            {getFriendlyErrorMessage(update.error, {
+              fallback: 'Erreur lors de la mise à jour'
+            })}
           </p>
         )}
       </form>

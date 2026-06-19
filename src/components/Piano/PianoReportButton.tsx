@@ -7,8 +7,8 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Label } from '@/components/ui/Label'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
-import { REPORT_REASON_MAX } from '@/lib/constants'
+import { getFriendlyErrorMessage } from '@/lib/errors'
+import { RATE_LIMITS, REPORT_REASON_MAX } from '@/lib/constants'
 import { useAuth } from '@/contexts/AuthContext'
 
 export function PianoReportButton({ pianoId }: { pianoId: string }) {
@@ -39,7 +39,12 @@ export function PianoReportButton({ pianoId }: { pianoId: string }) {
       setReason('')
       setOpen(false)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Échec du signalement'))
+      toast.error(
+        getFriendlyErrorMessage(err, {
+          fallback: 'Échec du signalement',
+          rateLimitLabels: RATE_LIMITS
+        })
+      )
     } finally {
       setSubmitting(false)
     }

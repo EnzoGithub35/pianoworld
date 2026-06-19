@@ -5,16 +5,12 @@ import { Check, X as XIcon } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
-import { PIANO_COMMENT_MAX } from '@/lib/constants'
+import { getFriendlyErrorMessage } from '@/lib/errors'
+import { PIANO_COMMENT_MAX, RATE_LIMITS } from '@/lib/constants'
 import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
 import { Textarea } from '@/components/ui/Textarea'
-import {
-  PIANO_QUALITIES,
-  QUALITY_LABELS,
-  type PianoQuality
-} from '@/types/database'
+import { PIANO_QUALITIES, QUALITY_LABELS, type PianoQuality } from '@/types/database'
 
 export function PianoUpdateForm({
   pianoId,
@@ -58,7 +54,12 @@ export function PianoUpdateForm({
       setComment('')
       onDone?.()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Échec de la MAJ'))
+      toast.error(
+        getFriendlyErrorMessage(err, {
+          fallback: 'Échec de la MAJ',
+          rateLimitLabels: RATE_LIMITS
+        })
+      )
     } finally {
       setSubmitting(false)
     }
