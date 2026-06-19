@@ -9,6 +9,7 @@ import { signupSchema, type SignupValues } from '@/lib/schemas'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
+import { FormError } from '@/components/ui/FormError'
 
 export function SignupForm() {
   const { signUp } = useAuth()
@@ -40,17 +41,28 @@ export function SignupForm() {
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="pseudo">Pseudo</Label>
-        <Input id="pseudo" autoComplete="username" {...register('pseudo')} />
+        <Input
+          id="pseudo"
+          autoComplete="username"
+          aria-invalid={!!errors.pseudo}
+          aria-describedby={errors.pseudo ? 'pseudo-error' : undefined}
+          {...register('pseudo')}
+        />
         {errors.pseudo && (
-          <p className="text-xs text-destructive">{errors.pseudo.message}</p>
+          <FormError id="pseudo-error">{errors.pseudo.message}</FormError>
         )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="email">Email</Label>
-        <Input id="email" type="email" autoComplete="email" {...register('email')} />
-        {errors.email && (
-          <p className="text-xs text-destructive">{errors.email.message}</p>
-        )}
+        <Input
+          id="email"
+          type="email"
+          autoComplete="email"
+          aria-invalid={!!errors.email}
+          aria-describedby={errors.email ? 'email-error' : undefined}
+          {...register('email')}
+        />
+        {errors.email && <FormError id="email-error">{errors.email.message}</FormError>}
       </div>
       <div className="space-y-2">
         <Label htmlFor="password">Mot de passe</Label>
@@ -58,16 +70,20 @@ export function SignupForm() {
           id="password"
           type="password"
           autoComplete="new-password"
+          aria-invalid={!!errors.password}
+          aria-describedby={errors.password ? 'password-error' : undefined}
           {...register('password')}
         />
         {errors.password && (
-          <p className="text-xs text-destructive">{errors.password.message}</p>
+          <FormError id="password-error">{errors.password.message}</FormError>
         )}
       </div>
       <div className="space-y-1.5">
         <label className="flex cursor-pointer items-start gap-2">
           <input
             type="checkbox"
+            aria-invalid={!!errors.acceptCgu}
+            aria-describedby={errors.acceptCgu ? 'cgu-error' : undefined}
             className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-input text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             {...register('acceptCgu')}
           />
@@ -92,7 +108,7 @@ export function SignupForm() {
           </span>
         </label>
         {errors.acceptCgu && (
-          <p className="text-xs text-destructive">{errors.acceptCgu.message}</p>
+          <FormError id="cgu-error">{errors.acceptCgu.message}</FormError>
         )}
       </div>
       <Button type="submit" className="w-full" loading={submitting}>

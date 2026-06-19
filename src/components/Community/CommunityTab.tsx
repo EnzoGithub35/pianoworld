@@ -1,7 +1,15 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import dayjs from 'dayjs'
-import { CalendarDays, Footprints, List, MapPin, Music, Sparkles } from 'lucide-react'
+import {
+  CalendarDays,
+  Footprints,
+  List,
+  Map as MapIcon,
+  MapPin,
+  Music,
+  Sparkles
+} from 'lucide-react'
 import { useCommunityFeed, type CommunityEvent } from '@/hooks/useCommunityFeed'
 import { Avatar } from '@/components/ui/Avatar'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -81,7 +89,16 @@ export function CommunityContent() {
         <EmptyState
           icon={<Sparkles className="h-6 w-6" />}
           title="Pas encore d'activité"
-          description="Quand un membre déclare 'je passe' ou 'j'y vais', son créneau apparaît ici."
+          description="Quand un membre déclare 'je passe' ou 'j'y vais', son créneau apparaît ici. En attendant, va voir ce qu'il y a autour de toi."
+          action={
+            <Link
+              to="/"
+              className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+            >
+              <MapIcon className="h-4 w-4" />
+              Ouvrir la carte
+            </Link>
+          }
         />
       )}
 

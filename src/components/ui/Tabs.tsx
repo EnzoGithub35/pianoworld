@@ -1,4 +1,11 @@
-import { createContext, useContext, useId, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useId,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode
+} from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -59,12 +66,45 @@ export function TabsList({
   /** Sur mobile, si trop d'onglets, scroll horizontal. */
   scrollable?: boolean
 }) {
+  const listRef = useRef<HTMLDivElement>(null)
+
+  // WAI-ARIA Tabs pattern : Arrow Left/Right cycle, Home/End vont aux extrêmes.
+  // Sprint 4 audit P2 — C.2 backlog. Active automatiquement l'onglet ciblé
+  // (modèle "automatic activation" — adapté à des TabsContent toujours montés).
+  const handleKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return
+    const node = listRef.current
+    if (!node) return
+    const tabs = Array.from(
+      node.querySelectorAll<HTMLButtonElement>('[role="tab"]:not([disabled])')
+    )
+    if (tabs.length === 0) return
+    const currentIndex = tabs.findIndex((t) => t === document.activeElement)
+    let nextIndex = currentIndex
+    if (e.key === 'ArrowLeft') {
+      nextIndex = currentIndex <= 0 ? tabs.length - 1 : currentIndex - 1
+    } else if (e.key === 'ArrowRight') {
+      nextIndex = currentIndex === tabs.length - 1 ? 0 : currentIndex + 1
+    } else if (e.key === 'Home') {
+      nextIndex = 0
+    } else if (e.key === 'End') {
+      nextIndex = tabs.length - 1
+    }
+    if (nextIndex !== currentIndex && tabs[nextIndex]) {
+      e.preventDefault()
+      tabs[nextIndex].focus()
+      tabs[nextIndex].click()
+    }
+  }
+
   return (
     <div
+      ref={listRef}
       role="tablist"
+      onKeyDown={handleKeyDown}
       className={cn(
         'flex border-b border-border',
-        scrollable && 'overflow-x-auto scrollbar-none',
+        scrollable && 'scrollbar-none overflow-x-auto',
         className
       )}
     >
