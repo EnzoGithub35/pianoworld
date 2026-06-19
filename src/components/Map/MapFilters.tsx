@@ -48,13 +48,19 @@ export function MapFilters({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-label={isActive ? 'Filtres (actifs)' : 'Filtres'}
         className={cn(
           'flex items-center gap-1.5 rounded-full bg-background px-3 py-2 text-xs font-medium shadow-md ring-1 ring-border hover:bg-accent',
           isActive && 'ring-2 ring-primary'
         )}
       >
-        <Filter className="h-4 w-4" /> Filtres
-        {open ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+        <Filter aria-hidden="true" className="h-4 w-4" /> Filtres
+        {open ? (
+          <ChevronUp aria-hidden="true" className="h-3 w-3" />
+        ) : (
+          <ChevronDown aria-hidden="true" className="h-3 w-3" />
+        )}
       </button>
 
       {open && (
@@ -75,9 +81,7 @@ export function MapFilters({
                         ? 'border-transparent text-white'
                         : 'border-border bg-background text-muted-foreground'
                     )}
-                    style={
-                      checked ? { backgroundColor: QUALITY_COLORS[q] } : undefined
-                    }
+                    style={checked ? { backgroundColor: QUALITY_COLORS[q] } : undefined}
                   >
                     {QUALITY_LABELS[q]}
                   </button>

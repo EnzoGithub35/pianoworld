@@ -5,7 +5,9 @@ import {
   isUniqueViolation,
   isPermissionDenied,
   isRateLimitError,
-  isInvalidPassword
+  isInvalidPassword,
+  getRateLimitAction,
+  getFriendlyErrorMessage
 } from '@/lib/errors'
 
 describe('getErrorMessage', () => {
@@ -93,5 +95,58 @@ describe('isInvalidPassword', () => {
   })
   it('refuse les autres messages', () => {
     expect(isInvalidPassword({ code: 'P0001', message: 'forbidden' })).toBe(false)
+  })
+})
+
+describe('getRateLimitAction', () => {
+  it('extrait le hint comme nom action', () => {
+    expect(
+      getRateLimitAction({
+        code: 'P0001',
+        message: 'rate_limit_exceeded',
+        hint: 'piano_create'
+      })
+    ).toBe('piano_create')
+  })
+  it('retourne null si pas un rate-limit', () => {
+    expect(
+      getRateLimitAction({ code: '23505', message: 'duplicate', hint: 'piano_create' })
+    ).toBeNull()
+  })
+  it('retourne null si pas de hint', () => {
+    expect(
+      getRateLimitAction({ code: 'P0001', message: 'rate_limit_exceeded' })
+    ).toBeNull()
+  })
+})
+
+describe('getFriendlyErrorMessage', () => {
+  it('formate un rate-limit avec délai si action connue', () => {
+    const msg = getFriendlyErrorMessage(
+      { code: 'P0001', message: 'rate_limit_exceeded', hint: 'piano_create' },
+      { rateLimitLabels: { piano_create: { count: 5, windowLabel: '24 h' } } }
+    )
+    expect(msg).toContain('5')
+    expect(msg).toContain('24 h')
+  })
+  it('fallback rate-limit générique si action inconnue', () => {
+    const msg = getFriendlyErrorMessage({
+      code: 'P0001',
+      message: 'rate_limit_exceeded'
+    })
+    expect(msg.toLowerCase()).toContain('trop vite')
+  })
+  it('message FR sur permission denied', () => {
+    const msg = getFriendlyErrorMessage({ code: '42501', message: 'denied' })
+    expect(msg.toLowerCase()).toContain('non autorisée')
+  })
+  it('message FR sur invalid password', () => {
+    const msg = getFriendlyErrorMessage({ code: 'P0001', message: 'invalid_password' })
+    expect(msg.toLowerCase()).toContain('mot de passe incorrect')
+  })
+  it('fallback au getErrorMessage standard pour erreur générique', () => {
+    expect(getFriendlyErrorMessage(new Error('boom'), { fallback: 'erreur' })).toBe(
+      'boom'
+    )
   })
 })

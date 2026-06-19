@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
+import { FormError } from '@/components/ui/FormError'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { profileNamesSchema, type ProfileNamesValues } from '@/lib/schemas'
@@ -107,10 +108,12 @@ export function EditNamesDialog({
             id="first-name"
             maxLength={FIRST_NAME_MAX}
             autoComplete="given-name"
+            aria-invalid={!!errors.first_name}
+            aria-describedby={errors.first_name ? 'first-name-error' : undefined}
             {...register('first_name')}
           />
           {errors.first_name && (
-            <p className="text-xs text-destructive">{errors.first_name.message}</p>
+            <FormError id="first-name-error">{errors.first_name.message}</FormError>
           )}
         </div>
 
@@ -120,10 +123,12 @@ export function EditNamesDialog({
             id="last-name"
             maxLength={LAST_NAME_MAX}
             autoComplete="family-name"
+            aria-invalid={!!errors.last_name}
+            aria-describedby={errors.last_name ? 'last-name-error' : undefined}
             {...register('last_name')}
           />
           {errors.last_name && (
-            <p className="text-xs text-destructive">{errors.last_name.message}</p>
+            <FormError id="last-name-error">{errors.last_name.message}</FormError>
           )}
         </div>
 

@@ -10,6 +10,7 @@ import { resetPasswordSchema, type ResetPasswordValues } from '@/lib/schemas'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
+import { FormError } from '@/components/ui/FormError'
 
 export function ResetPasswordForm() {
   const navigate = useNavigate()
@@ -45,10 +46,12 @@ export function ResetPasswordForm() {
           id="password"
           type="password"
           autoComplete="new-password"
+          aria-invalid={!!errors.password}
+          aria-describedby={errors.password ? 'password-error' : undefined}
           {...register('password')}
         />
         {errors.password && (
-          <p className="text-xs text-destructive">{errors.password.message}</p>
+          <FormError id="password-error">{errors.password.message}</FormError>
         )}
       </div>
       <div className="space-y-2">
@@ -57,10 +60,12 @@ export function ResetPasswordForm() {
           id="confirm"
           type="password"
           autoComplete="new-password"
+          aria-invalid={!!errors.confirm}
+          aria-describedby={errors.confirm ? 'confirm-error' : undefined}
           {...register('confirm')}
         />
         {errors.confirm && (
-          <p className="text-xs text-destructive">{errors.confirm.message}</p>
+          <FormError id="confirm-error">{errors.confirm.message}</FormError>
         )}
       </div>
       <Button type="submit" className="w-full" loading={submitting}>

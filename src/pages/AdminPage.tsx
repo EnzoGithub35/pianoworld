@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
@@ -16,11 +16,50 @@ import { AuditLogTab } from '@/components/Admin/AuditLogTab'
  * composant indépendant pour permettre l'extraction lazy si besoin plus tard.
  *
  * L'onglet "Rôles" n'est visible que pour les superadmins (`isSuperadmin`).
+ *
+ * Sprint 4 audit P2 — C.4 backlog : tab synchronisé avec ?tab= pour que le
+ * refresh / deep-link préservent l'onglet actif.
  */
+const VALID_TABS = [
+  'kpis',
+  'users',
+  'reports',
+  'events',
+  'requests',
+  'audit',
+  'roles'
+] as const
+type AdminTab = (typeof VALID_TABS)[number]
+
 export function AdminPage() {
   const navigate = useNavigate()
   const { isSuperadmin } = useAuth()
-  const [tab, setTab] = useState<string>('kpis')
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  const initialTab = (() => {
+    const p = searchParams.get('tab')
+    if (p && (VALID_TABS as readonly string[]).includes(p)) {
+      // Garde-fou : un non-superadmin ne peut pas atterrir sur ?tab=roles
+      if (p === 'roles' && !isSuperadmin) return 'kpis'
+      return p as AdminTab
+    }
+    return 'kpis'
+  })()
+  const [tab, setTab] = useState<AdminTab>(initialTab)
+
+  // Sync ?tab=… → state quand l'URL change (deep-link partagé)
+  useEffect(() => {
+    const p = searchParams.get('tab')
+    if (
+      p &&
+      (VALID_TABS as readonly string[]).includes(p) &&
+      p !== tab &&
+      !(p === 'roles' && !isSuperadmin)
+    ) {
+      setTab(p as AdminTab)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
@@ -37,7 +76,12 @@ export function AdminPage() {
 
       <Tabs
         value={tab}
-        onValueChange={setTab}
+        onValueChange={(v) => {
+          const next = v as AdminTab
+          setTab(next)
+          // ?tab= par défaut omis pour 'kpis' (URL propre sur landing)
+          setSearchParams(next === 'kpis' ? {} : { tab: next }, { replace: true })
+        }}
         className="flex flex-1 flex-col overflow-hidden"
       >
         <TabsList scrollable className="bg-background px-2">

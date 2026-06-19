@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Avatar } from '@/components/ui/Avatar'
+import { FormError } from '@/components/ui/FormError'
 import { emailSearchSchema, type EmailSearchValues } from '@/lib/schemas'
 import { useEmailSearch } from '@/hooks/useEmailSearch'
 import { getErrorMessage, isRateLimitError } from '@/lib/errors'
@@ -75,10 +76,12 @@ export function EmailSearchDialog({
             inputMode="email"
             autoComplete="off"
             placeholder="ami@example.com"
+            aria-invalid={!!errors.email}
+            aria-describedby={errors.email ? 'email-search-error' : undefined}
             {...register('email')}
           />
           {errors.email && (
-            <p className="text-xs text-destructive">{errors.email.message}</p>
+            <FormError id="email-search-error">{errors.email.message}</FormError>
           )}
         </div>
 
