@@ -3,7 +3,6 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { ActivityTab } from '@/components/Dashboard/ActivityTab'
-import { CommunityTab } from '@/components/Community/CommunityTab'
 import { EventsTab } from '@/components/Events/EventsTab'
 import { MyRequestsTab } from '@/components/Requests/MyRequestsTab'
 import { FavoritesTab } from '@/components/Dashboard/FavoritesTab'
@@ -13,9 +12,8 @@ import { useAuth } from '@/contexts/AuthContext'
 import { REQUESTS_LAST_SEEN_KEY } from '@/lib/constants'
 
 /**
- * Hub utilisateur. 5 onglets :
- *  - Activité : stats + feed récent (composant ActivityTab)
- *  - Communauté : passages + sessions sur ±14 jours
+ * Hub utilisateur. 4 onglets (post audit Sprint 3 fusion) :
+ *  - Activité : stats + toggle interne Récent / Communauté (fusion v3)
  *  - Évènements (admin-only en l'absence d'event) : liste des events
  *  - Favoris (v7) : pianos marqués favoris
  *  - Support : feedback user / réponses admin (avec Badge nouvelle réponse)
@@ -23,18 +21,16 @@ import { REQUESTS_LAST_SEEN_KEY } from '@/lib/constants'
  * v7 : les "Amis" sont maintenant une page standalone /friends (NavBar 5e
  * icône Users). L'ancien `?tab=friends` redirige automatiquement.
  *
+ * Sprint 3 audit P1/M : ancien tab 'community' fusionné dans 'activity' via
+ * toggle interne pour réduire le débordement de 5 onglets sur mobile 360px.
+ * Back-compat ?tab=community → redirect vers ?tab=activity.
+ *
  * Badge "nouvelle réponse" sur Support : on compare le replied_at le plus
  * récent vs le dernier vu (localStorage). MyRequestsTab marque comme vu au mount.
  */
-type DashboardTab = 'activity' | 'community' | 'events' | 'favorites' | 'requests'
+type DashboardTab = 'activity' | 'events' | 'favorites' | 'requests'
 
-const VALID_TABS: DashboardTab[] = [
-  'activity',
-  'community',
-  'events',
-  'favorites',
-  'requests'
-]
+const VALID_TABS: DashboardTab[] = ['activity', 'events', 'favorites', 'requests']
 
 export function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -57,6 +53,14 @@ export function Dashboard() {
       navigate('/friends', { replace: true })
     }
   }, [searchParams, navigate])
+
+  // Sprint 3 audit — back-compat : ?tab=community → activity (toggle interne)
+  useEffect(() => {
+    if (searchParams.get('tab') === 'community') {
+      setSearchParams({}, { replace: true })
+      setTab('activity')
+    }
+  }, [searchParams, setSearchParams])
 
   // Sync ?tab=… vers state quand user clique un deep-link
   useEffect(() => {
@@ -94,7 +98,6 @@ export function Dashboard() {
       >
         <TabsList scrollable className="bg-background px-2">
           <TabsTrigger value="activity">Activité</TabsTrigger>
-          <TabsTrigger value="community">Communauté</TabsTrigger>
           {showEventsTab && <TabsTrigger value="events">Évènements</TabsTrigger>}
           <TabsTrigger value="favorites">Favoris</TabsTrigger>
           <TabsTrigger value="requests">
@@ -108,9 +111,6 @@ export function Dashboard() {
         <div className="flex-1 overflow-y-auto">
           <TabsContent value="activity">
             <ActivityTab />
-          </TabsContent>
-          <TabsContent value="community">
-            <CommunityTab />
           </TabsContent>
           <TabsContent value="events">
             <EventsTab />
