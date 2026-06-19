@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
+import { RATE_LIMITS } from '@/lib/constants'
 
 /**
  * Bouton "J'y suis passé". Insère une visite et invalide le cache.
@@ -37,7 +38,9 @@ export function VisitButton({ pianoId }: { pianoId: string }) {
       setCooldown(true)
       window.setTimeout(() => setCooldown(false), 3000)
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Erreur'))
+      toast.error(
+        getFriendlyErrorMessage(err, { fallback: 'Erreur', rateLimitLabels: RATE_LIMITS })
+      )
     } finally {
       setSubmitting(false)
     }

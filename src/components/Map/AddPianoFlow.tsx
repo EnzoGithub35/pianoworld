@@ -17,13 +17,14 @@ import { uploadPianoPhoto, deletePianoPhoto, validatePhotoFile } from '@/lib/pho
 import { haversineMeters } from '@/lib/distance'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getErrorMessage, getFriendlyErrorMessage } from '@/lib/errors'
 import { pianoFormSchema } from '@/lib/schemas'
 import {
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
   DUPLICATE_DISTANCE_METERS,
-  PIANO_COMMENT_MAX
+  PIANO_COMMENT_MAX,
+  RATE_LIMITS
 } from '@/lib/constants'
 import { PIANO_QUALITIES, QUALITY_LABELS, type PianoQuality } from '@/types/database'
 
@@ -181,7 +182,12 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
       if (photo_url) {
         await deletePianoPhoto(photo_url).catch(() => {})
       }
-      toast.error(getErrorMessage(err, "Erreur d'ajout"))
+      toast.error(
+        getFriendlyErrorMessage(err, {
+          fallback: "Erreur d'ajout",
+          rateLimitLabels: RATE_LIMITS
+        })
+      )
     } finally {
       setSubmitting(false)
     }

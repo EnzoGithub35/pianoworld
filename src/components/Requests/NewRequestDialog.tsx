@@ -9,9 +9,9 @@ import { Textarea } from '@/components/ui/Textarea'
 import { useAuth } from '@/contexts/AuthContext'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
 import { requestFormSchema } from '@/lib/schemas'
-import { REQUEST_MESSAGE_MAX, REQUEST_SUBJECT_MAX } from '@/lib/constants'
+import { RATE_LIMITS, REQUEST_MESSAGE_MAX, REQUEST_SUBJECT_MAX } from '@/lib/constants'
 
 export function NewRequestDialog({
   open,
@@ -51,7 +51,12 @@ export function NewRequestDialog({
       setMessage('')
       onClose()
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Envoi échoué'))
+      toast.error(
+        getFriendlyErrorMessage(err, {
+          fallback: 'Envoi échoué',
+          rateLimitLabels: RATE_LIMITS
+        })
+      )
     } finally {
       setSubmitting(false)
     }
@@ -61,8 +66,8 @@ export function NewRequestDialog({
     <Dialog open={open} onClose={onClose} title="Nouvelle demande">
       <div className="space-y-3">
         <p className="text-xs text-muted-foreground">
-          Question, bug, suggestion, demande de modification… L'admin te répondra ici
-          dans l'app.
+          Question, bug, suggestion, demande de modification… L'admin te répondra ici dans
+          l'app.
         </p>
 
         <div className="space-y-1.5">
