@@ -2933,7 +2933,10 @@ as $$
     p.lat,
     p.lng,
     pf.created_at as favorited_at,
-    (select max(pu.updated_at) from public.piano_updates pu where pu.piano_id = pf.piano_id) as last_update_at
+    -- piano_updates n'a pas de colonne `updated_at` ; le timestamp natif est
+    -- `created_at` (chaque update = nouvelle row immuable). Le bug était présent
+    -- depuis v7 PR-A (silencieux côté frontend qui ignorait le NULL retourné).
+    (select max(pu.created_at) from public.piano_updates pu where pu.piano_id = pf.piano_id) as last_update_at
   from public.piano_favorites pf
   join public.pianos p on p.id = pf.piano_id
   where pf.user_id = auth.uid()
