@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input'
 import { Label } from '@/components/ui/Label'
 import { Avatar } from '@/components/ui/Avatar'
 import { FormError } from '@/components/ui/FormError'
+import { HelpTooltip } from '@/components/ui/HelpTooltip'
 import { emailSearchSchema, type EmailSearchValues } from '@/lib/schemas'
 import { useEmailSearch } from '@/hooks/useEmailSearch'
 import { getFriendlyErrorMessage } from '@/lib/errors'
@@ -83,11 +84,19 @@ export function EmailSearchDialog({
           )}
         </div>
 
-        <p className="text-[11px] text-muted-foreground">
-          Limite : {RATE_LIMITS.user_search_email.count} recherches par{' '}
-          {RATE_LIMITS.user_search_email.windowLabel}. L'email reste privé — seul le
-          pseudo est révélé si la personne existe.
-        </p>
+        <div className="flex items-start gap-1.5">
+          <p className="flex-1 text-[11px] text-muted-foreground">
+            Limite : {RATE_LIMITS.user_search_email.count} recherches par{' '}
+            {RATE_LIMITS.user_search_email.windowLabel}. L'email reste privé — seul le
+            pseudo est révélé si la personne existe.
+          </p>
+          <HelpTooltip label="Pourquoi cette limite">
+            La recherche par email exact est limitée pour éviter qu'un attaquant scanne
+            toute une liste d'emails (énumération de comptes). C'est aussi pour ça qu'on
+            ne dit jamais si un compte existe vraiment — seul un pseudo est révélé si
+            match.
+          </HelpTooltip>
+        </div>
 
         <Button
           type="submit"

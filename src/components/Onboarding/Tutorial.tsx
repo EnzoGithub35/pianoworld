@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
-import { Bell, Music, Map as MapIcon, Plus, RefreshCw } from 'lucide-react'
+import { Bell, Music, Map as MapIcon, Plus, RefreshCw, X } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/contexts/AuthContext'
 import { TUTORIAL_STORAGE_KEY } from '@/lib/constants'
@@ -101,9 +101,21 @@ export function Tutorial() {
     <div className="animate-fade-in fixed inset-0 z-[2000] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center">
       <div
         key={step}
-        className="animate-slide-up-modal sm:animate-scale-in w-full max-w-sm rounded-t-2xl border border-border bg-popover p-6 shadow-2xl sm:rounded-2xl"
+        className="animate-slide-up-modal sm:animate-scale-in relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-6 shadow-2xl sm:rounded-2xl"
         style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
       >
+        {/* Sprint 6 — X header visible pour skip rapide (avant : seul le lien
+            "Passer le tutoriel" en bas, peu visible mobile). Garde aussi le
+            skip link en bas pour les users qui scrollent jusqu'au final. */}
+        <button
+          type="button"
+          onClick={close}
+          aria-label="Fermer le tutoriel"
+          className="absolute right-3 top-3 flex h-11 w-11 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        >
+          <X className="h-5 w-5" />
+        </button>
+
         <div className="flex flex-col items-center text-center">
           <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 text-primary">
             <Icon className="h-8 w-8" />
@@ -147,7 +159,7 @@ export function Tutorial() {
               className="w-full"
               onClick={() => setStep(step + 1)}
             >
-              Plus tard
+              Plus tard (réglable dans Paramètres)
             </Button>
           </div>
         ) : (

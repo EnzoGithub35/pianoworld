@@ -7,6 +7,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { Button } from '@/components/ui/Button'
 import { Label } from '@/components/ui/Label'
 import { Input } from '@/components/ui/Input'
+import { HelpTooltip } from '@/components/ui/HelpTooltip'
 import { useAuth } from '@/contexts/AuthContext'
 import { useFriends } from '@/hooks/useFriends'
 import { supabase } from '@/lib/supabase'
@@ -199,7 +200,16 @@ export function SessionDialog({
         </div>
 
         <div className="space-y-2">
-          <Label>Qui peut voir ?</Label>
+          <div className="flex items-center gap-1.5">
+            <Label>Qui peut voir ?</Label>
+            <HelpTooltip label="En savoir plus sur la visibilité">
+              <strong className="block text-foreground">Tout le monde</strong> : ton
+              créneau est public sur la fiche du piano.
+              <br />
+              <strong className="mt-1.5 block text-foreground">Mes amis</strong> : seuls
+              tes amis voient ton créneau et reçoivent une notification quand tu arrives.
+            </HelpTooltip>
+          </div>
           {friendsCount === 0 ? (
             <div className="rounded-md border border-dashed border-border bg-muted/50 px-3 py-2.5 text-xs text-muted-foreground">
               <p className="mb-1.5">
