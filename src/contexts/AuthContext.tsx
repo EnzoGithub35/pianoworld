@@ -133,6 +133,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     password: string,
     pseudo: string
   ): Promise<SignUpResult> => {
+    // Sprint 7 sécu (A.6.4) — Rate-limit signup par IP via Edge Function.
+    // Fail-open si l'Edge Function plante (le rate-limit Supabase Auth + le
+    // check pseudo unique restent les filets) : on n'empêche pas un user
+    // légitime de signup à cause d'une indispo de l'edge fn.
+    try {
+      const { data: gate, error: gateError } = await supabase.functions.invoke<{
+        allowed: boolean
+        error?: string
+        message?: string
+      }>('signup-protected', { body: {} })
+      if (!gateError && gate && gate.allowed === false) {
+        logger.warn('auth.signUp', 'ip_rate_limit blocked', { error: gate.error })
+        throw new Error(
+          gate.message ?? 'Trop de tentatives depuis cette connexion. Réessaie plus tard.'
+        )
+      }
+    } catch (err) {
+      // Distingue les erreurs de NOTRE throw (rate-limit hit) de celles de
+      // l'invoke lui-même (réseau, fonction non déployée). Le rate-limit hit
+      // doit être propagé ; l'erreur d'invoke est swallow (fail-open).
+      if (err instanceof Error && err.message.includes('Trop de tentatives')) {
+        throw err
+      }
+      logger.warn('auth.signUp', 'ip rate-limit check failed (fail-open)', {
+        message: err instanceof Error ? err.message : String(err)
+      })
+    }
+
     // Pseudo dup check best-effort (race possible : le trigger DB ajoute un
     // suffixe en fallback, donc on est protégé même en cas de course).
     const { data: existing, error: lookupError } = await supabase

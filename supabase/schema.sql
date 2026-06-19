@@ -3022,6 +3022,74 @@ revoke all on function public.export_my_data() from public;
 grant execute on function public.export_my_data() to authenticated;
 
 -- ============================
+-- 16. Sprint 7 sécu — Rate-limit signup par IP (backlog A.6.4)
+-- ============================
+-- Anti création de masse de comptes jetables depuis un botnet ou un script.
+-- Côté serveur uniquement : l'Edge Function `signup-protected` hash l'IP du
+-- caller (SHA-256 + salt env) et appelle la RPC ci-dessous AVANT de laisser
+-- le frontend faire `auth.signUp`.
+--
+-- Choix de design :
+--  - Table `signup_ip_attempts` invisible PostgREST (REVOKE ALL + RLS sans
+--    policy). Accessible uniquement via la RPC SECURITY DEFINER.
+--  - Hash IP (pas IP en clair) : RGPD-friendly, on garde la capacité de
+--    contre-mesurer un attaquant sans connaître son IP réelle.
+--  - Advisory lock dans la RPC : atomic count + insert, anti-race batch.
+--  - Limite : 5 tentatives par IP par 24h. Raisonnable pour quelqu'un qui
+--    se trompe d'email + tolère café public derrière NAT.
+--  - Purge hebdomadaire via pg_cron (cf. instructions section 13).
+
+create table if not exists public.signup_ip_attempts (
+  ip_hash      text not null,
+  attempted_at timestamptz not null default now()
+);
+create index if not exists signup_ip_attempts_hash_time_idx
+  on public.signup_ip_attempts(ip_hash, attempted_at desc);
+
+alter table public.signup_ip_attempts enable row level security;
+-- Aucune policy : nul ne peut lire/écrire directement. La RPC ci-dessous
+-- (SECURITY DEFINER) gère tout côté serveur, appelée uniquement par
+-- l'Edge Function signup-protected via service_role.
+revoke all on public.signup_ip_attempts from anon, authenticated;
+
+create or replace function public.check_signup_ip_allowed(p_ip_hash text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count int;
+  v_window interval := interval '24 hours';
+  v_max int := 5;
+begin
+  if p_ip_hash is null or length(p_ip_hash) = 0 then
+    raise exception 'invalid_ip_hash' using errcode = 'P0001';
+  end if;
+
+  -- Sérialise les checks par IP sur la durée de la transaction (anti-race
+  -- batch : 2 requêtes simultanées du même IP voient tous les deux count
+  -- = max-1 sans le lock).
+  perform pg_advisory_xact_lock(hashtext('signup_ip:' || p_ip_hash));
+
+  select count(*) into v_count
+  from public.signup_ip_attempts
+  where ip_hash = p_ip_hash
+    and attempted_at >= now() - v_window;
+
+  if v_count >= v_max then
+    return false;
+  end if;
+
+  insert into public.signup_ip_attempts(ip_hash) values (p_ip_hash);
+  return true;
+end$$;
+
+revoke all on function public.check_signup_ip_allowed(text) from public, anon, authenticated;
+-- Accessible uniquement via service_role depuis l'Edge Function.
+grant execute on function public.check_signup_ip_allowed(text) to service_role;
+
+-- ============================
 -- 12. Bootstrap superadmin (idempotent — à ré-exécuter après le 1er signup)
 -- ============================
 update public.profiles
@@ -3086,3 +3154,14 @@ where id = (select id from auth.users where email = 'enzo.reine35@gmail.com')
 --       delete from public.friend_arriving_dedup
 --       where last_queued_at < now() - interval '7 days';
 --     $$);
+--
+-- (7) Sprint 7 sécu — déploiement Edge Function signup-protected (A.6.4).
+--   - Generate un sel : openssl rand -base64 32
+--   - Edge Functions > Secrets : ajouter SIGNUP_IP_HASH_SALT = <ce sel>
+--   - supabase functions deploy signup-protected
+--   - Tester en local : curl POST {ip} → JSON {allowed:bool} ou 429
+--   - Purge nightly des attempts > 7 jours (rétention courte = RGPD-friendly) :
+--       select cron.schedule('signup-ip-attempts-purge', '37 3 * * *', $$
+--         delete from public.signup_ip_attempts
+--         where attempted_at < now() - interval '7 days';
+--       $$);

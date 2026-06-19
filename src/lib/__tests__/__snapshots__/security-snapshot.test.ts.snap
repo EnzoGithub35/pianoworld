@@ -43,6 +43,14 @@ exports[`Security surface snapshot > Functions SECURITY DEFINER (sécurité-sens
     "security": "definer",
   },
   {
+    "args": "p_ip_hash text",
+    "language": "plpgsql",
+    "name": "check_signup_ip_allowed",
+    "returns": "boolean",
+    "searchPath": "public",
+    "security": "definer",
+  },
+  {
     "args": "p_password text default null",
     "language": "plpgsql",
     "name": "delete_my_account",
@@ -370,6 +378,18 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
     "object": "cancel_friend_request(uuid)",
     "privileges": "all",
     "type": "revoke",
+  },
+  {
+    "grantee": "public, anon, authenticated",
+    "object": "check_signup_ip_allowed(text)",
+    "privileges": "all",
+    "type": "revoke",
+  },
+  {
+    "grantee": "service_role",
+    "object": "check_signup_ip_allowed(text)",
+    "privileges": "execute",
+    "type": "grant",
   },
   {
     "grantee": "authenticated",
@@ -780,6 +800,12 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
     "type": "revoke",
   },
   {
+    "grantee": "anon, authenticated",
+    "object": "signup_ip_attempts",
+    "privileges": "all",
+    "type": "revoke",
+  },
+  {
     "grantee": "authenticated",
     "object": "toggle_piano_favorite(uuid)",
     "privileges": "execute",
@@ -1148,6 +1174,7 @@ exports[`Security surface snapshot > RLS-enabled tables 1`] = `
   "profiles",
   "push_subscriptions",
   "rate_limit_buckets",
+  "signup_ip_attempts",
   "user_requests",
 ]
 `;
