@@ -1,7 +1,15 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { MapContainer, Marker, TileLayer, useMapEvents } from 'react-leaflet'
 import L from 'leaflet'
-import { Crosshair, MapPin, X, Camera, Loader2, AlertTriangle } from 'lucide-react'
+import {
+  Crosshair,
+  MapPin,
+  X,
+  Camera,
+  Loader2,
+  AlertTriangle,
+  Search
+} from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import toast from 'react-hot-toast'
 import { Button } from '@/components/ui/Button'
@@ -12,7 +20,7 @@ import { Dialog } from '@/components/ui/Dialog'
 import { useAuth } from '@/contexts/AuthContext'
 import { useGeolocation } from '@/hooks/useGeolocation'
 import { usePianos } from '@/hooks/usePianos'
-import { reverseGeocode } from '@/lib/geocoding'
+import { reverseGeocode, searchAddress, type GeocodeResult } from '@/lib/geocoding'
 import { uploadPianoPhoto, deletePianoPhoto, validatePhotoFile } from '@/lib/photo'
 import { haversineMeters } from '@/lib/distance'
 import { supabase } from '@/lib/supabase'
@@ -67,6 +75,17 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
   const [submitting, setSubmitting] = useState(false)
   const [confirmClose, setConfirmClose] = useState(false)
 
+  // Sprint 6 — Autocomplete Photon pour résoudre le cas "ajouter un piano à
+  // distance" (audit P0). Trois sources peuvent setter `address` :
+  //  - reverseGeocode après geoloc/clic carte → ne PAS re-trigger l'autocomplete
+  //  - typing user → trigger debounce 300ms + suggestions Photon
+  //  - pick suggestion → set address + coords + center map
+  // `skipAutocompleteRef` discrimine les sources sans re-render extra.
+  const [addressSuggestions, setAddressSuggestions] = useState<GeocodeResult[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [searchingAddress, setSearchingAddress] = useState(false)
+  const skipAutocompleteRef = useRef(false)
+
   /**
    * Le form est "dirty" si l'utilisateur a touché à au moins un champ texte ou photo.
    * Note : on N'inclut PAS `coords` seul — un user qui ouvre le flow et pose juste
@@ -77,10 +96,55 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!coords) return
     setResolvingAddress(true)
+    // Marqueur : la prochaine setAddress vient du reverseGeocode → on saute le
+    // debounce autocomplete qui se déclencherait sinon en cascade.
+    skipAutocompleteRef.current = true
     reverseGeocode(coords.lat, coords.lng)
       .then((label) => setAddress(label))
       .finally(() => setResolvingAddress(false))
   }, [coords])
+
+  // Sprint 6 — Debounce 300ms sur address pour autocomplete Photon. Skip si
+  // address vient d'un reverseGeocode (skipAutocompleteRef) ou d'un pick
+  // suggestion. < 3 chars → clear suggestions sans appel réseau.
+  useEffect(() => {
+    if (skipAutocompleteRef.current) {
+      skipAutocompleteRef.current = false
+      return
+    }
+    if (address.trim().length < 3) {
+      setAddressSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+    const t = window.setTimeout(() => {
+      setSearchingAddress(true)
+      searchAddress(address)
+        .then((results) => {
+          setAddressSuggestions(results)
+          setShowSuggestions(results.length > 0)
+        })
+        .catch(() => {
+          // Photon down → silencieux, user peut toujours cliquer la carte
+          setAddressSuggestions([])
+          setShowSuggestions(false)
+        })
+        .finally(() => setSearchingAddress(false))
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [address])
+
+  const pickSuggestion = (s: GeocodeResult) => {
+    // Pick = source unique : set coords + address + center map. On saute le
+    // reverseGeocode (qui re-set la même address au caractère près) en
+    // marquant skipAutocompleteRef AVANT setAddress.
+    skipAutocompleteRef.current = true
+    setAddress(s.label)
+    setCoords({ lat: s.lat, lng: s.lng })
+    setCenter([s.lat, s.lng])
+    setShowSuggestions(false)
+    setAddressSuggestions([])
+  }
 
   useEffect(() => {
     if (!photoFile) {
@@ -280,14 +344,65 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
 
           <div className="space-y-2">
             <Label htmlFor="address">Adresse</Label>
-            <Input
-              id="address"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              placeholder={
-                resolvingAddress ? 'Résolution…' : 'Place ou clique sur la carte'
-              }
-            />
+            <div className="relative">
+              <Input
+                id="address"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                onFocus={() => {
+                  if (addressSuggestions.length > 0) setShowSuggestions(true)
+                }}
+                onBlur={() => {
+                  // Delay pour permettre au onMouseDown du dropdown de fire avant
+                  // que le blur close les suggestions.
+                  window.setTimeout(() => setShowSuggestions(false), 150)
+                }}
+                placeholder={
+                  resolvingAddress
+                    ? 'Résolution…'
+                    : 'Tape une adresse ou clique sur la carte'
+                }
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={showSuggestions}
+                aria-controls="address-suggestions"
+              />
+              {searchingAddress && (
+                <Loader2 className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />
+              )}
+              {showSuggestions && addressSuggestions.length > 0 && (
+                <ul
+                  id="address-suggestions"
+                  role="listbox"
+                  className="absolute inset-x-0 top-full z-10 mt-1 max-h-64 overflow-y-auto rounded-md border border-border bg-popover shadow-lg"
+                >
+                  {addressSuggestions.map((s, i) => (
+                    <li
+                      key={`${s.lat}-${s.lng}-${i}`}
+                      role="option"
+                      aria-selected={false}
+                    >
+                      <button
+                        type="button"
+                        // onMouseDown plutôt que onClick pour fire AVANT le onBlur
+                        // de l'Input (sinon le blur close avant que le click ne hit)
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          pickSuggestion(s)
+                        }}
+                        className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
+                      >
+                        <Search className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                        <span className="flex-1 leading-snug">{s.label}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Tape une adresse pour ajouter un piano que tu ne vois pas sur la carte.
+            </p>
           </div>
 
           <div className="space-y-2">

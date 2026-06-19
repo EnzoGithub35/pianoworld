@@ -2,6 +2,7 @@ import { useState } from 'react'
 import toast from 'react-hot-toast'
 import { UserPlus, UserCheck, Check, X, Clock } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
+import { HelpTooltip } from '@/components/ui/HelpTooltip'
 import { useFriendStatus, useFriendActions, useFriendRequests } from '@/hooks/useFriends'
 import { useAuth } from '@/contexts/AuthContext'
 import { getErrorMessage, getFriendlyErrorMessage, isRateLimitError } from '@/lib/errors'
@@ -116,10 +117,17 @@ export function AddFriendButton({
 
   if (value === 'pending_sent') {
     return (
-      <Button variant="outline" disabled className="cursor-default">
-        <Clock className="mr-2 h-4 w-4" />
-        Demande envoyée
-      </Button>
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" disabled className="cursor-default">
+          <Clock className="mr-2 h-4 w-4" />
+          Demande envoyée
+        </Button>
+        <HelpTooltip label="Pas de réponse ?">
+          Si tu ne reçois pas de réponse rapidement, c'est normal. Par respect de la vie
+          privée, on ne notifie jamais un refus — la personne peut juste prendre son
+          temps. Tu peux annuler ta demande depuis l'onglet « Amis ».
+        </HelpTooltip>
+      </div>
     )
     // Note : on n'expose pas de bouton "Annuler" inline (le user peut le faire
     // depuis Dashboard → Amis → Envoyées). Garde l'UX ciblée vu qu'annuler
