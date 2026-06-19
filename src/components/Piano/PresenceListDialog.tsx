@@ -41,7 +41,7 @@ export function PresenceListDialog({
           <EmptyState
             icon={<Music className="h-5 w-5" />}
             title="Personne pour l'instant"
-            description="Pas de session en cours ni à venir visible."
+            description="Pas de créneau en cours ni à venir visible."
           />
         ) : (
           data.map((entry) => {
