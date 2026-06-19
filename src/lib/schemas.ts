@@ -243,3 +243,32 @@ export const sessionFormSchema = z.object({
   visibility: z.enum(['public', 'friends']).default('public')
 })
 export type SessionFormValues = z.infer<typeof sessionFormSchema>
+
+/**
+ * v7 — Nom et prénom opt-in (RGPD : default NULL côté DB).
+ * Empty string acceptée et convertie en NULL côté RPC update_my_profile_names.
+ */
+export const profileNamesSchema = z.object({
+  first_name: z
+    .string()
+    .trim()
+    .max(50, 'Maximum 50 caractères')
+    .optional()
+    .or(z.literal('')),
+  last_name: z
+    .string()
+    .trim()
+    .max(50, 'Maximum 50 caractères')
+    .optional()
+    .or(z.literal(''))
+})
+export type ProfileNamesValues = z.infer<typeof profileNamesSchema>
+
+/**
+ * v7 — Recherche utilisateur par email exact-match.
+ * Le RPC find_user_by_email est rate-limité 5/24h serveur.
+ */
+export const emailSearchSchema = z.object({
+  email: z.string().trim().toLowerCase().email('Adresse email invalide')
+})
+export type EmailSearchValues = z.infer<typeof emailSearchSchema>

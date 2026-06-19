@@ -15,7 +15,7 @@ type ViewMode = 'list' | 'calendar'
 const PEEK_DAYS = 14 // 14 jours glissants pour le calendrier
 
 /**
- * Onglet "Communauté" : qui joue/est passé sur les pianos.
+ * v7 — Contenu "Communauté" sans wrapper d'espacement.
  *
  *  - Vue Liste : sessions live en haut, puis à venir, puis passages récents.
  *  - Vue Calendrier : timeline horizontale 14 jours, dot par jour, panneau
@@ -24,13 +24,17 @@ const PEEK_DAYS = 14 // 14 jours glissants pour le calendrier
  * Choix : calendrier 14j glissants (et pas mois complet) car en pratique
  * personne ne planifie à 3 semaines, et un mois complet sur mobile prend toute
  * la hauteur. 14j tient sur 2 lignes ou défilable horizontalement.
+ *
+ * Composant réutilisable : utilisé inline dans ActivityTab (Dashboard) via
+ * un toggle Récent/Communauté (audit P1/M : fusion des 2 tabs pour réduire
+ * le débordement 5 onglets sur 360px).
  */
-export function CommunityTab() {
+export function CommunityContent() {
   const [view, setView] = useState<ViewMode>('list')
   const { data, isLoading } = useCommunityFeed()
 
   return (
-    <div className="space-y-4 p-4 pb-24">
+    <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           Qui passe ou joue sur les pianos de la communauté.
@@ -86,6 +90,15 @@ export function CommunityTab() {
           {view === 'list' ? <ListView events={data} /> : <CalendarView events={data} />}
         </>
       )}
+    </div>
+  )
+}
+
+/** Conservé pour back-compat éventuelle (usage standalone). */
+export function CommunityTab() {
+  return (
+    <div className="p-4 pb-24">
+      <CommunityContent />
     </div>
   )
 }

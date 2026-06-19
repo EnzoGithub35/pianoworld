@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import {
   ChevronRight,
   HelpCircle,
+  IdCard,
   KeyRound,
   LogOut,
   Moon,
@@ -22,6 +23,7 @@ import { DeleteAccountDialog } from '@/components/Settings/DeleteAccountDialog'
 import { ExportDataButton } from '@/components/Settings/ExportDataButton'
 import { ChangePasswordDialog } from '@/components/Settings/ChangePasswordDialog'
 import { NotificationPreferences } from '@/components/Settings/NotificationPreferences'
+import { EditNamesDialog } from '@/components/Settings/EditNamesDialog'
 import { TUTORIAL_STORAGE_KEY } from '@/lib/constants'
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -96,6 +98,7 @@ export function SettingsPage() {
   const { theme, toggleTheme } = useTheme()
   const navigate = useNavigate()
   const [editPseudo, setEditPseudo] = useState(false)
+  const [editNames, setEditNames] = useState(false)
   const [deleteAccount, setDeleteAccount] = useState(false)
   const [changePassword, setChangePassword] = useState(false)
   const friends = useFriends()
@@ -132,6 +135,16 @@ export function SettingsPage() {
             value={`@${profile?.pseudo ?? '—'}`}
             onClick={() => setEditPseudo(true)}
           />
+          <Row
+            icon={IdCard}
+            label="Nom et prénom"
+            value={
+              profile?.first_name || profile?.last_name
+                ? [profile?.first_name, profile?.last_name].filter(Boolean).join(' ')
+                : 'Optionnel'
+            }
+            onClick={() => setEditNames(true)}
+          />
           <Row icon={Shield} label="Email" value={user?.email ?? '—'} />
           <Row
             icon={KeyRound}
@@ -142,7 +155,7 @@ export function SettingsPage() {
 
         <Section title="Social">
           <Link
-            to="/dashboard?tab=friends"
+            to="/friends"
             className="flex items-center justify-between px-3 py-3 transition-colors hover:bg-accent"
           >
             <span className="flex items-center gap-3">
@@ -245,6 +258,12 @@ export function SettingsPage() {
       </div>
 
       <EditPseudoDialog open={editPseudo} onClose={() => setEditPseudo(false)} />
+      <EditNamesDialog
+        open={editNames}
+        onClose={() => setEditNames(false)}
+        currentFirstName={profile?.first_name ?? null}
+        currentLastName={profile?.last_name ?? null}
+      />
       <DeleteAccountDialog open={deleteAccount} onClose={() => setDeleteAccount(false)} />
       <ChangePasswordDialog
         open={changePassword}

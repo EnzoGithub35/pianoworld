@@ -63,6 +63,11 @@ export function UserPage() {
             <p className="font-display text-2xl font-bold tracking-tight">
               @{profile.pseudo}
             </p>
+            {(profile.first_name || profile.last_name) && (
+              <p className="text-sm font-medium text-foreground">
+                {[profile.first_name, profile.last_name].filter(Boolean).join(' ')}
+              </p>
+            )}
             <p className="text-xs text-muted-foreground">
               Inscrit {fromNow(profile.created_at)}
             </p>

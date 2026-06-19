@@ -1,13 +1,16 @@
 import { Users } from 'lucide-react'
 import { SessionList } from './SessionList'
-import { VisitButton } from './VisitButton'
-import { SessionButton } from './SessionButton'
+import { PresenceFlow } from './PresenceFlow'
 import { VisitorStack } from './VisitorStack'
 
 /**
  * Section "Activité" sur PianoPage : sessions (live + à venir) + passages
- * récents + les deux call-to-actions. Embarquée par PianoPage entre les
- * boutons d'action (Y aller / Partager) et la section "Mise à jour".
+ * récents + un CTA unifié "Signaler ma présence" (audit Sprint 3 P1/M —
+ * remplace les 2 boutons VisitButton + SessionButton par un flow dialog
+ * passé/futur pour rendre le mental model explicite côté newcomer).
+ *
+ * Embarquée par PianoPage entre les boutons d'action (Naviguer / Partager)
+ * et la section "Mise à jour".
  */
 export function PianoActivity({ pianoId }: { pianoId: string }) {
   return (
@@ -24,15 +27,8 @@ export function PianoActivity({ pianoId }: { pianoId: string }) {
         <VisitorStack pianoId={pianoId} />
       </div>
 
-      <div className="space-y-2 border-t border-border pt-4">
-        <div className="flex gap-2">
-          <VisitButton pianoId={pianoId} />
-          <SessionButton pianoId={pianoId} />
-        </div>
-        <p className="text-[11px] text-muted-foreground">
-          « J&apos;y suis allé jouer » = enregistrer un passage. « Je prévois d&apos;y
-          jouer » = planifier un créneau visible aux autres.
-        </p>
+      <div className="border-t border-border pt-4">
+        <PresenceFlow pianoId={pianoId} />
       </div>
     </section>
   )

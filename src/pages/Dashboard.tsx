@@ -1,51 +1,66 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { Badge } from '@/components/ui/Badge'
 import { ActivityTab } from '@/components/Dashboard/ActivityTab'
-import { CommunityTab } from '@/components/Community/CommunityTab'
 import { EventsTab } from '@/components/Events/EventsTab'
 import { MyRequestsTab } from '@/components/Requests/MyRequestsTab'
-import { FriendsTab } from '@/components/Friends/FriendsTab'
+import { FavoritesTab } from '@/components/Dashboard/FavoritesTab'
 import { useMyRequests } from '@/hooks/useUserRequests'
-import { usePendingReceivedCount } from '@/hooks/useFriends'
 import { useEvents } from '@/hooks/useEvents'
 import { useAuth } from '@/contexts/AuthContext'
 import { REQUESTS_LAST_SEEN_KEY } from '@/lib/constants'
 
 /**
- * Hub utilisateur. 3 onglets :
- *  - Activité : stats + feed récent (composant ActivityTab)
- *  - Évènements : liste des events à venir, inscription
- *  - Mes demandes : feedback user / réponses admin
+ * Hub utilisateur. 4 onglets (post audit Sprint 3 fusion) :
+ *  - Activité : stats + toggle interne Récent / Communauté (fusion v3)
+ *  - Évènements (admin-only en l'absence d'event) : liste des events
+ *  - Favoris (v7) : pianos marqués favoris
+ *  - Support : feedback user / réponses admin (avec Badge nouvelle réponse)
  *
- * Badge "nouvelle réponse" sur Mes demandes : on compare le replied_at le plus
+ * v7 : les "Amis" sont maintenant une page standalone /friends (NavBar 5e
+ * icône Users). L'ancien `?tab=friends` redirige automatiquement.
+ *
+ * Sprint 3 audit P1/M : ancien tab 'community' fusionné dans 'activity' via
+ * toggle interne pour réduire le débordement de 5 onglets sur mobile 360px.
+ * Back-compat ?tab=community → redirect vers ?tab=activity.
+ *
+ * Badge "nouvelle réponse" sur Support : on compare le replied_at le plus
  * récent vs le dernier vu (localStorage). MyRequestsTab marque comme vu au mount.
  */
-type DashboardTab = 'activity' | 'community' | 'events' | 'requests' | 'friends'
+type DashboardTab = 'activity' | 'events' | 'favorites' | 'requests'
 
-const VALID_TABS: DashboardTab[] = [
-  'activity',
-  'community',
-  'events',
-  'requests',
-  'friends'
-]
+const VALID_TABS: DashboardTab[] = ['activity', 'events', 'favorites', 'requests']
 
 export function Dashboard() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const { isAdmin } = useAuth()
+  const { data: events } = useEvents(false)
+  const { data: myRequests } = useMyRequests()
+  // Masque l'onglet Évènements aux non-admins si aucun event n'existe.
+  const showEventsTab = isAdmin || (events && events.length > 0)
+
   const initialTab = (() => {
     const p = searchParams.get('tab') as DashboardTab | null
     return p && VALID_TABS.includes(p) ? p : 'activity'
   })()
   const [tab, setTab] = useState<DashboardTab>(initialTab)
-  const { data: myRequests } = useMyRequests()
-  const pendingFriendsCount = usePendingReceivedCount()
-  const { isAdmin } = useAuth()
-  const { data: events } = useEvents(false)
-  // Masque l'onglet Évènements aux non-admins si aucun event n'existe.
-  // Les admins voient toujours la tab (pour pouvoir en créer).
-  const showEventsTab = isAdmin || (events && events.length > 0)
+
+  // v7 — back-compat : ?tab=friends → page /friends standalone.
+  useEffect(() => {
+    if (searchParams.get('tab') === 'friends') {
+      navigate('/friends', { replace: true })
+    }
+  }, [searchParams, navigate])
+
+  // Sprint 3 audit — back-compat : ?tab=community → activity (toggle interne)
+  useEffect(() => {
+    if (searchParams.get('tab') === 'community') {
+      setSearchParams({}, { replace: true })
+      setTab('activity')
+    }
+  }, [searchParams, setSearchParams])
 
   // Sync ?tab=… vers state quand user clique un deep-link
   useEffect(() => {
@@ -83,16 +98,8 @@ export function Dashboard() {
       >
         <TabsList scrollable className="bg-background px-2">
           <TabsTrigger value="activity">Activité</TabsTrigger>
-          <TabsTrigger value="community">Communauté</TabsTrigger>
           {showEventsTab && <TabsTrigger value="events">Évènements</TabsTrigger>}
-          <TabsTrigger value="friends">
-            <span className="flex items-center gap-1.5">
-              Amis
-              {pendingFriendsCount > 0 && (
-                <Badge variant="primary">{pendingFriendsCount}</Badge>
-              )}
-            </span>
-          </TabsTrigger>
+          <TabsTrigger value="favorites">Favoris</TabsTrigger>
           <TabsTrigger value="requests">
             <span className="flex items-center gap-1.5">
               Support
@@ -105,14 +112,11 @@ export function Dashboard() {
           <TabsContent value="activity">
             <ActivityTab />
           </TabsContent>
-          <TabsContent value="community">
-            <CommunityTab />
-          </TabsContent>
           <TabsContent value="events">
             <EventsTab />
           </TabsContent>
-          <TabsContent value="friends" className="p-4">
-            <FriendsTab />
+          <TabsContent value="favorites">
+            <FavoritesTab />
           </TabsContent>
           <TabsContent value="requests">
             <MyRequestsTab />

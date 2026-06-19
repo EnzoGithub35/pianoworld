@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   CalendarPlus,
@@ -7,14 +8,20 @@ import {
   Music,
   Plus,
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Users
 } from 'lucide-react'
 import { useGlobalStats } from '@/hooks/useStats'
 import { useRecentFeed } from '@/hooks/useRecentFeed'
 import { QualityBadge } from '@/components/Piano/QualityBadge'
+import { CommunityContent } from '@/components/Community/CommunityTab'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { cn } from '@/lib/utils'
 import { fromNow } from '@/lib/date'
+
+const ACTIVITY_VIEW_KEY = 'pianoworld:activity-view'
+type ActivityView = 'recent' | 'community'
 
 /**
  * Onglet "Activité" du Dashboard : stats globales + feed récent.
@@ -64,6 +71,25 @@ function FeedSkeleton() {
 export function ActivityTab() {
   const { data: stats, isLoading: statsLoading } = useGlobalStats()
   const { data: feed, isLoading: feedLoading } = useRecentFeed(15)
+  const [view, setView] = useState<ActivityView>('recent')
+
+  // Charge la vue persistée (défaut: 'recent')
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(ACTIVITY_VIEW_KEY)
+      if (stored === 'community' || stored === 'recent') setView(stored)
+    } catch {
+      // localStorage indispo → garde le défaut
+    }
+  }, [])
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVITY_VIEW_KEY, view)
+    } catch {
+      // best-effort
+    }
+  }, [view])
 
   return (
     <div className="space-y-6 p-4 pb-24">
@@ -90,139 +116,217 @@ export function ActivityTab() {
         )}
       </section>
 
-      <section className="space-y-3">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Activité récente
-        </h2>
+      {/* v7 — Toggle Récent / Communauté (fusion 2 anciens tabs Dashboard) */}
+      <div className="flex overflow-hidden rounded-md border border-border bg-card">
+        <button
+          type="button"
+          onClick={() => setView('recent')}
+          aria-pressed={view === 'recent'}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
+            view === 'recent'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent'
+          )}
+        >
+          <Sparkles className="h-3.5 w-3.5" />
+          Récent
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('community')}
+          aria-pressed={view === 'community'}
+          className={cn(
+            'flex flex-1 items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors',
+            view === 'community'
+              ? 'bg-primary text-primary-foreground'
+              : 'text-muted-foreground hover:bg-accent'
+          )}
+        >
+          <Users className="h-3.5 w-3.5" />
+          Communauté
+        </button>
+      </div>
 
-        {feedLoading && <FeedSkeleton />}
+      {view === 'community' && <CommunityContent />}
 
-        {!feedLoading && feed && feed.length === 0 && (
-          <EmptyState
-            icon={<Sparkles className="h-6 w-6" />}
-            title="Aucune activité pour l'instant"
-            description={
-              stats?.total === 0
-                ? 'Sois le premier à cartographier un piano près de chez toi !'
-                : 'Ouvre la carte et participe à la communauté.'
-            }
-            action={
-              <Link
-                to="/"
-                className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-              >
-                <MapIcon className="h-4 w-4" />
-                {stats?.total === 0 ? 'Ajouter le premier piano' : 'Ouvrir la carte'}
-              </Link>
-            }
-          />
-        )}
+      {view === 'recent' && (
+        <section className="space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Activité récente
+          </h2>
 
-        <ul className="space-y-2">
-          {feed?.map((event) => {
-            if (event.kind === 'new') {
-              const p = event.piano
-              return (
-                <li key={event.id}>
-                  <Link
-                    to={`/piano/${p.id}`}
-                    className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
-                  >
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-                      <Plus className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">
-                        <span className="font-semibold">
-                          @{p.author?.pseudo ?? 'inconnu'}
-                        </span>{' '}
-                        <span className="text-muted-foreground">a ajouté un piano</span>
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {p.address}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        <QualityBadge quality={p.quality} />
-                        <span className="text-[11px] text-muted-foreground">
-                          {fromNow(event.created_at)}
-                        </span>
+          {feedLoading && <FeedSkeleton />}
+
+          {!feedLoading && feed && feed.length === 0 && (
+            <EmptyState
+              icon={<Sparkles className="h-6 w-6" />}
+              title="Aucune activité pour l'instant"
+              description={
+                stats?.total === 0
+                  ? 'Sois le premier à cartographier un piano près de chez toi !'
+                  : 'Ouvre la carte et participe à la communauté.'
+              }
+              action={
+                <Link
+                  to="/"
+                  className="inline-flex h-10 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+                >
+                  <MapIcon className="h-4 w-4" />
+                  {stats?.total === 0 ? 'Ajouter le premier piano' : 'Ouvrir la carte'}
+                </Link>
+              }
+            />
+          )}
+
+          <ul className="space-y-2">
+            {feed?.map((event) => {
+              if (event.kind === 'new') {
+                const p = event.piano
+                return (
+                  <li key={event.id}>
+                    <Link
+                      to={`/piano/${p.id}`}
+                      className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
+                    >
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                        <Plus className="h-5 w-5" />
                       </div>
-                    </div>
-                    {p.photo_url && (
-                      <img
-                        src={p.photo_url}
-                        alt=""
-                        className="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
-                        loading="lazy"
-                      />
-                    )}
-                  </Link>
-                </li>
-              )
-            }
-            if (event.kind === 'update') {
-              const u = event.update
-              if (!u.piano) return null
-              return (
-                <li key={event.id}>
-                  <Link
-                    to={`/piano/${u.piano.id}`}
-                    className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
-                  >
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-200">
-                      <RefreshCw className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm">
-                        <span className="font-semibold">
-                          @{u.author?.pseudo ?? 'inconnu'}
-                        </span>{' '}
-                        <span className="text-muted-foreground">a mis à jour</span>
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {u.piano.address}
-                      </p>
-                      <div className="mt-1.5 flex items-center gap-2">
-                        {u.new_quality && <QualityBadge quality={u.new_quality} />}
-                        <span className="text-[11px] text-muted-foreground">
-                          {u.still_there ? 'Encore là' : 'Disparu'} ·{' '}
-                          {fromNow(event.created_at)}
-                        </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm">
+                          <span className="font-semibold">
+                            @{p.author?.pseudo ?? 'inconnu'}
+                          </span>{' '}
+                          <span className="text-muted-foreground">a ajouté un piano</span>
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {p.address}
+                        </p>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          <QualityBadge quality={p.quality} />
+                          <span className="text-[11px] text-muted-foreground">
+                            {fromNow(event.created_at)}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    {u.piano.photo_url && (
-                      <img
-                        src={u.piano.photo_url}
-                        alt=""
-                        className="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
-                        loading="lazy"
-                      />
-                    )}
-                  </Link>
-                </li>
-              )
-            }
-            if (event.kind === 'visit') {
-              const v = event.visit
-              if (!v.piano) return null
+                      {p.photo_url && (
+                        <img
+                          src={p.photo_url}
+                          alt=""
+                          className="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
+                          loading="lazy"
+                        />
+                      )}
+                    </Link>
+                  </li>
+                )
+              }
+              if (event.kind === 'update') {
+                const u = event.update
+                if (!u.piano) return null
+                return (
+                  <li key={event.id}>
+                    <Link
+                      to={`/piano/${u.piano.id}`}
+                      className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
+                    >
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-200">
+                        <RefreshCw className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm">
+                          <span className="font-semibold">
+                            @{u.author?.pseudo ?? 'inconnu'}
+                          </span>{' '}
+                          <span className="text-muted-foreground">a mis à jour</span>
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {u.piano.address}
+                        </p>
+                        <div className="mt-1.5 flex items-center gap-2">
+                          {u.new_quality && <QualityBadge quality={u.new_quality} />}
+                          <span className="text-[11px] text-muted-foreground">
+                            {u.still_there ? 'Encore là' : 'Disparu'} ·{' '}
+                            {fromNow(event.created_at)}
+                          </span>
+                        </div>
+                      </div>
+                      {u.piano.photo_url && (
+                        <img
+                          src={u.piano.photo_url}
+                          alt=""
+                          className="h-14 w-14 flex-shrink-0 rounded-lg object-cover"
+                          loading="lazy"
+                        />
+                      )}
+                    </Link>
+                  </li>
+                )
+              }
+              if (event.kind === 'visit') {
+                const v = event.visit
+                if (!v.piano) return null
+                return (
+                  <li key={event.id}>
+                    <Link
+                      to={`/piano/${v.piano.id}`}
+                      className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
+                    >
+                      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                        <Footprints className="h-5 w-5" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm">
+                          <span className="font-semibold">
+                            @{v.author?.pseudo ?? 'inconnu'}
+                          </span>{' '}
+                          <span className="text-muted-foreground">y est passé</span>
+                        </p>
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {v.piano.address}
+                        </p>
+                        <p className="mt-1.5 text-[11px] text-muted-foreground">
+                          {fromNow(event.created_at)}
+                        </p>
+                      </div>
+                    </Link>
+                  </li>
+                )
+              }
+              // event.kind === 'session'
+              const s = event.session
+              if (!s.piano) return null
+              const startMs = new Date(s.starts_at).getTime()
+              const nowMs = Date.now()
+              const endMs = startMs + s.duration_min * 60_000
+              const isLive = startMs <= nowMs && endMs > nowMs
+              const isUpcoming = startMs > nowMs
+              const subline = isLive
+                ? 'joue en ce moment'
+                : isUpcoming
+                  ? `prévu ${fromNow(s.starts_at)}`
+                  : 'a joué récemment'
               return (
                 <li key={event.id}>
                   <Link
-                    to={`/piano/${v.piano.id}`}
+                    to={`/piano/${s.piano.id}`}
                     className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
                   >
-                    <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-200">
-                      <Footprints className="h-5 w-5" />
+                    <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+                      <CalendarPlus className="h-5 w-5" />
+                      {isLive && (
+                        <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-green-500" />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm">
                         <span className="font-semibold">
-                          @{v.author?.pseudo ?? 'inconnu'}
+                          @{s.author?.pseudo ?? 'inconnu'}
                         </span>{' '}
-                        <span className="text-muted-foreground">y est passé</span>
+                        <span className="text-muted-foreground">{subline}</span>
                       </p>
                       <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                        {v.piano.address}
+                        {s.piano.address}
                       </p>
                       <p className="mt-1.5 text-[11px] text-muted-foreground">
                         {fromNow(event.created_at)}
@@ -231,52 +335,10 @@ export function ActivityTab() {
                   </Link>
                 </li>
               )
-            }
-            // event.kind === 'session'
-            const s = event.session
-            if (!s.piano) return null
-            const startMs = new Date(s.starts_at).getTime()
-            const nowMs = Date.now()
-            const endMs = startMs + s.duration_min * 60_000
-            const isLive = startMs <= nowMs && endMs > nowMs
-            const isUpcoming = startMs > nowMs
-            const subline = isLive
-              ? 'joue en ce moment'
-              : isUpcoming
-                ? `prévu ${fromNow(s.starts_at)}`
-                : 'a joué récemment'
-            return (
-              <li key={event.id}>
-                <Link
-                  to={`/piano/${s.piano.id}`}
-                  className="card-hover flex gap-3 rounded-xl border border-border bg-card p-3"
-                >
-                  <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-                    <CalendarPlus className="h-5 w-5" />
-                    {isLive && (
-                      <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-green-500" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm">
-                      <span className="font-semibold">
-                        @{s.author?.pseudo ?? 'inconnu'}
-                      </span>{' '}
-                      <span className="text-muted-foreground">{subline}</span>
-                    </p>
-                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                      {s.piano.address}
-                    </p>
-                    <p className="mt-1.5 text-[11px] text-muted-foreground">
-                      {fromNow(event.created_at)}
-                    </p>
-                  </div>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </section>
+            })}
+          </ul>
+        </section>
+      )}
     </div>
   )
 }

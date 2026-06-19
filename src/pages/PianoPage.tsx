@@ -13,6 +13,7 @@ import { PianoShareButton } from '@/components/Piano/PianoShareButton'
 import { PianoReportButton } from '@/components/Piano/PianoReportButton'
 import { PianoActivity } from '@/components/Piano/PianoActivity'
 import { PianoPresenceCounter } from '@/components/Piano/PianoPresenceCounter'
+import { FavoriteButton } from '@/components/Piano/FavoriteButton'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -157,6 +158,11 @@ export function PianoPage() {
           <PianoNavigateButton lat={piano.lat} lng={piano.lng} />
           <PianoShareButton pianoId={piano.id} address={piano.address} />
         </div>
+        {user && (
+          <div className="flex gap-2">
+            <FavoriteButton pianoId={piano.id} />
+          </div>
+        )}
 
         {user && user.id !== piano.created_by && (
           <div className="flex justify-end">
