@@ -1,37 +1,87 @@
-# PianoWorld — Post-deploy & étapes utilisateur
+# PianoWorld — Actions post-deploy & opérationnel
 
-Ce document liste **ce que tu dois faire** côté Supabase / Vercel / GitHub après chaque merge de PR. Garde-le à jour à chaque sprint pour éviter de perdre une étape.
+Ce document liste **les actions hors-code à faire côté Supabase / Vercel / GitHub** après chaque merge sur main, le **backlog opérationnel** (PWA icons, cleanup branches, Dependabot), et les **archives** des sprints récents (Sprint 7-11 livrés).
 
-Dernière mise à jour : **2026-06-20** (Sprint 8 wording, Sprint 7 sécu pushé).
-
----
-
-## 🟢 PRs en attente de merge
-
-| PR                | Branche                       | Type                          | Étapes post-merge                                     | Priorité                |
-| ----------------- | ----------------------------- | ----------------------------- | ----------------------------------------------------- | ----------------------- |
-| Sprint 6 UX       | `feat/audit-sprint-6`         | Frontend pur                  | Aucune                                                | 🟡 si pas encore mergée |
-| **Sprint 7 sécu** | `feat/audit-sprint-7-sec`     | Backend + frontend + edge fn  | **⚠️ Étapes Supabase obligatoires** ⬇️                | 🔴 fais ça en premier   |
-| Sprint 8 wording  | `feat/audit-sprint-8-wording` | Frontend + Edge Function mail | **⚠️ Re-déployer Edge Function send-notification** ⬇️ | 🟡 après Sprint 7       |
-
-Ordre recommandé : **Sprint 7 → Sprint 8** (Sprint 8 est branché depuis Sprint 7, rebase automatique propre).
+Dernière mise à jour : **2026-06-20** (Sprint 11 E2E Playwright livré, Sprints 7-11 tous fusionnés sur main).
 
 ---
 
-## 🔴 Sprint 7 sécu — Actions Supabase requises
+## Status des Sprints (juin 2026)
 
-Sans ces étapes, le frontend appellera l'Edge Function `signup-protected` qui n'existe pas → **fail-open déclenche automatiquement** (le signup procède quand même). L'app reste fonctionnelle, mais la protection IP n'est pas active.
+| Sprint            | Branche                       | Type                     | Status   | Actions post-merge   |
+| ----------------- | ----------------------------- | ------------------------ | -------- | -------------------- |
+| Sprint 6 UX       | `feat/audit-sprint-6`         | Frontend pur             | ✅ mergé | Aucune               |
+| Sprint 7 sécu     | `feat/audit-sprint-7-sec`     | Backend + Edge Function  | ✅ mergé | ⚠️ **Voir Annexe A** |
+| Sprint 8 wording  | `feat/audit-sprint-8-wording` | Frontend + Edge Function | ✅ mergé | ⚠️ **Voir Annexe B** |
+| Sprint 9 pgTAP    | `feat/audit-sprint-9-pgtap`   | Tests SQL                | ✅ mergé | Aucune               |
+| Sprint 10 hygiène | `feat/audit-sprint-10`        | Frontend hygiène         | ✅ mergé | ⚠️ **Voir Annexe C** |
+| Sprint 11 E2E     | `feat/audit-sprint-11-e2e`    | Tests E2E + CI           | ✅ mergé | Aucune               |
+
+> Si tu as cloné le repo après le 2026-06-20, les annexes A/B/C s'appliquent à ton environnement Supabase (déployer Edge Functions, ajouter secrets, etc.). Si tu maintiens l'environnement existant, les annexes A et B ont déjà été exécutées.
+
+---
+
+## ⏭️ Backlog actif post-Sprint 11
+
+Items restants après Sprint 11. Source canonique : [CLAUDE.md § Sprints récents (6-11)](../CLAUDE.md). Détail sécurité dans [docs/SECURITY.md § Backlog](SECURITY.md).
+
+| #     | Item                                                           | Effort | Priorité                 |
+| ----- | -------------------------------------------------------------- | ------ | ------------------------ |
+| A.1.2 | Chiffrement `push_subscriptions` (Vault Supabase)              | M      | P3 — non dispo free tier |
+| A.5   | CSP nonces (retirer `'unsafe-inline'`, Vercel middleware Edge) | L      | **P1** sécu              |
+| A.6.3 | 2FA TOTP admin (Supabase MFA)                                  | M      | P3                       |
+| B.3   | Component/hook tests Vitest + MSW                              | L      | P2                       |
+| C.1   | Dialog focus trap (a11y)                                       | S      | P2                       |
+| C.2   | Tabs ArrowLeft/Right keyboard handler (a11y)                   | S      | P2                       |
+| C.3   | `AddFriendButton.findPendingId` stub null (UX dégradée)        | S      | P2                       |
+| C.4   | AdminPage tabs URL-synced (refresh perd l'onglet)              | S      | P3                       |
+| PWA   | Icons PNG `pwa-192x192.png` + `pwa-512x512.png` à générer      | XS     | P2 user-side             |
+
+Pour démarrer un sprint sur un de ces items, ouvrir une branche `feat/audit-sprint-<n>-<topic>` (cf. [BRANCHING.md](../BRANCHING.md) convention).
+
+---
+
+## 📋 Checklist générale après chaque merge
+
+À refaire à chaque PR mergée, dans l'ordre :
+
+- [ ] `git checkout main && git pull origin main` — sync local
+- [ ] Si le PR a touché `supabase/schema.sql` → exécuter le diff SQL côté Supabase (SQL Editor)
+- [ ] Si le PR a touché `supabase/functions/<fn>/` → `supabase functions deploy <fn>`
+- [ ] Si le PR a touché `vercel.json` → vérifier que le redeploy auto Vercel a passé (Dashboard Vercel)
+- [ ] Si le PR a touché les colonnes `notification_preferences` → snapshot RLS à jour (`npm test`)
+- [ ] Si le PR a touché `playwright.config.ts` ou specs E2E → run `npm run test:e2e` localement
+- [ ] Test manuel de la feature livrée
+
+---
+
+## 🗂️ Où trouver quoi rapidement
+
+| Tu veux…                        | Va voir                                                                                   |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| Migrations SQL en cours         | [supabase/schema.sql](../supabase/schema.sql) sections 14, 15, 16                         |
+| Edge Functions déployées        | [supabase/functions/](../supabase/functions/) — `send-notification/`, `signup-protected/` |
+| Catalogue RPCs SECURITY DEFINER | [docs/RPCS.md](RPCS.md)                                                                   |
+| Backlog sécurité détaillé       | [docs/SECURITY.md](SECURITY.md) § Backlog                                                 |
+| PRs Dependabot à arbitrer       | https://github.com/EnzoGithub35/pianoworld/pulls (filter `is:pr label:dependencies`)      |
+| Stratégie de tests (3 tiers)    | [docs/TESTING.md](TESTING.md)                                                             |
+| Status Sprints 6-11             | [CLAUDE.md § Sprints récents](../CLAUDE.md)                                               |
+
+---
+
+## Annexe A — Sprint 7 sécu : actions Supabase (historique)
+
+> Toutes ces étapes ont été exécutées sur l'environnement principal le 2026-06-20. À refaire uniquement pour un nouveau projet Supabase.
 
 ### 1. Exécuter le SQL de la section 16
 
-1. Va sur le dashboard Supabase → **SQL Editor**
-2. Copie-colle uniquement la section 16 de [supabase/schema.sql](../supabase/schema.sql) (de `-- 16. Sprint 7 sécu` jusqu'à `-- 12. Bootstrap superadmin`)
-3. Exécute. Crée la table `signup_ip_attempts` + la RPC `check_signup_ip_allowed`.
+1. Dashboard Supabase → **SQL Editor**
+2. Copier la section 16 de [supabase/schema.sql](../supabase/schema.sql) (de `-- 16. Sprint 7 sécu` jusqu'à `-- 12. Bootstrap superadmin`)
+3. Exécuter — crée la table `signup_ip_attempts` + la RPC `check_signup_ip_allowed`.
 
 ### 2. Générer un sel cryptographique
 
 ```powershell
-# PowerShell
 [Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
 ```
 
@@ -41,27 +91,20 @@ Ou en bash :
 openssl rand -base64 32
 ```
 
-Copie la sortie (32 caractères base64).
-
 ### 3. Ajouter le sel en secret Supabase
 
-1. Dashboard Supabase → **Edge Functions → Manage secrets**
-2. Add new secret :
-   - Name : `SIGNUP_IP_HASH_SALT`
-   - Value : `<le sel généré à l'étape 2>`
-3. Save.
+Dashboard Supabase → **Edge Functions → Manage secrets** :
+
+- Name : `SIGNUP_IP_HASH_SALT`
+- Value : `<le sel généré>`
 
 ### 4. Déployer l'Edge Function
-
-Depuis la racine du repo, en local :
 
 ```bash
 supabase functions deploy signup-protected
 ```
 
-> ⚠️ Tu auras besoin de `supabase login` la première fois et `supabase link --project-ref <ton-ref>` pour lier au projet.
-
-### 5. (Optionnel mais recommandé) Activer la purge nightly
+### 5. (Optionnel) Activer la purge nightly
 
 Dashboard → SQL Editor :
 
@@ -72,85 +115,45 @@ select cron.schedule('signup-ip-attempts-purge', '37 3 * * *', $$
 $$);
 ```
 
-Sans ça, la table grossit indéfiniment (10-100 rows/jour, donc pas critique court terme, mais propre à long terme).
-
 ### Vérification (5 min)
 
 1. Ouvre l'app en navigation privée
 2. Va sur `/auth/signup`
-3. Tente 6 signups consécutifs avec 6 emails fakes différents → le 6e doit afficher "Trop de tentatives depuis cette connexion. Réessaie plus tard."
-4. Vérifie dans Supabase SQL Editor : `select count(*) from signup_ip_attempts;` → 5 rows
+3. Tente 6 signups consécutifs avec 6 emails fakes différents → le 6e doit afficher "Trop de tentatives depuis cette connexion."
+4. SQL Editor : `select count(*) from signup_ip_attempts;` → 5 rows
 
 ---
 
-## 🟡 Sprint 8 wording — Re-déployer l'Edge Function mail
+## Annexe B — Sprint 8 wording : re-déploiement Edge Function mail (historique)
 
-Sprint 8 modifie 3 strings dans [supabase/functions/send-notification/templates.ts](../supabase/functions/send-notification/templates.ts) (wording "session" → "créneau" dans les mails). Sans re-déploiement, les mails envoyés continuent à dire "session".
+Sprint 8 a modifié 3 strings dans [supabase/functions/send-notification/templates.ts](../supabase/functions/send-notification/templates.ts) (wording "session" → "créneau"). Sans re-déploiement, les mails continuent à dire "session".
 
 ```bash
 supabase functions deploy send-notification
 ```
 
-C'est instantané, zero downtime. Les mails déjà en queue (`notifications_outbox`) seront envoyés avec le nouveau wording.
+Instantané, zero downtime.
 
 ---
 
-## 📋 Checklist générale après chaque merge
+## Annexe C — Sprint 10 : actions user-side optionnelles (encore en attente côté user)
 
-À refaire à chaque PR mergée, dans l'ordre :
-
-- [ ] `git checkout main && git pull origin main` — sync local
-- [ ] Si le PR a touché `supabase/schema.sql` → exécuter le diff SQL côté Supabase
-- [ ] Si le PR a touché `supabase/functions/<fn>/` → `supabase functions deploy <fn>`
-- [ ] Si le PR a touché `vercel.json` → vérifier que le redeploy automatique Vercel a passé (Dashboard Vercel)
-- [ ] Si le PR a touché les `notification_preferences` colonnes → vérifier que le snapshot RLS est à jour (`npm test`)
-- [ ] Test manuel de la feature livrée (cf. section verif de chaque sprint)
-
----
-
-## 🗂️ Récap général — où trouver quoi
-
-| Tu veux…                                  | Va voir                                                                                                   |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
-| Migrations SQL en cours                   | [supabase/schema.sql](../supabase/schema.sql) sections 14, 15, 16                                         |
-| Edge Functions                            | [supabase/functions/](../supabase/functions/) — `send-notification/`, `signup-protected/` (Sprint 7 sécu) |
-| Backlog audit V7 résiduel                 | [docs/AUDIT-V7.md](AUDIT-V7.md) (si présent) ou la roadmap dans le plan file                              |
-| Backlog sécurité (CSP, 2FA, push chiffré) | [docs/SECURITY.md](SECURITY.md) section "Backlog"                                                         |
-| PRs Dependabot à arbitrer                 | https://github.com/EnzoGithub35/pianoworld/pulls (filter `is:pr label:dependencies`)                      |
-| Vieilles branches à nettoyer              | `git branch -r                                                                                            | grep fix/` — toutes mergées via squash, safe à supprimer |
-
----
-
-## ⏭️ Prochaines étapes (post merge Sprint 7 + 8)
-
-1. **Sprint 9 sécu — A.5 CSP nonces** (P1, Large) : retirer `'unsafe-inline'` du CSP. Scope précis dans [docs/SECURITY.md](SECURITY.md) section Backlog A.5.
-2. **Sprint 9 alt — Track tests** : B.4 pgTAP RLS (M) → B.3 composants/hooks MSW (L) → B.5 Playwright e2e (L).
-3. **Track D dette technique** (Quick wins ~30 min total) : PWA icons + Dependabot batch safe + cleanup branches stale.
-
-Quand tu auras décidé, on rebascule en plan mode pour designer le Sprint 9.
-
----
-
-## 🧹 Sprint 10 — Actions user-side (hors-code)
-
-Sprint 10 a livré le code (Leaflet CSS chunk + JSDoc cleanup + reconnexion toast + audit CTAs). Reste 3 actions **à exécuter par toi** quand tu as 10 minutes :
+Sprint 10 a livré le code (Leaflet CSS lazy chunk + JSDoc cleanup + reconnexion toast + audit CTAs). Restent 3 actions **non-bloquantes** à exécuter si tu as 10 minutes :
 
 ### 1. PWA PNG icons (~5 min)
 
 Sans ces icônes, iOS et Android utilisent une icône générique à l'install PWA.
 
-1. Va sur **https://realfavicongenerator.net**
+1. Va sur https://realfavicongenerator.net
 2. Upload `public/favicon.svg`
-3. Configure : Web App Manifest section → couleur background `#FAF7F0` (crème PianoWorld)
+3. Web App Manifest section → couleur background `#FAF7F0` (crème PianoWorld)
 4. Download le package
-5. Extrait et place dans `public/` :
-   - `pwa-192x192.png`
-   - `pwa-512x512.png`
+5. Place dans `public/` : `pwa-192x192.png`, `pwa-512x512.png`
 6. Commit + push
 
 ### 2. Dependabot batch safe (~5 min)
 
-Va sur https://github.com/EnzoGithub35/pianoworld/pulls et merge en batch :
+GH dashboard https://github.com/EnzoGithub35/pianoworld/pulls :
 
 **🟢 SAFE à merger** :
 
@@ -162,69 +165,41 @@ Va sur https://github.com/EnzoGithub35/pianoworld/pulls et merge en batch :
 
 **🔴 SKIP / attention** :
 
-- `dependabot/npm_and_yarn/vitest-4.1.8` (majeure → risque casser snapshot RLS, attendre un sprint dédié)
-- `dependabot/npm_and_yarn/lint-staged-17.0.7` (majeure → vérifier le changelog avant merge)
+- `dependabot/npm_and_yarn/vitest-4.1.8` (majeure → risque snapshot RLS)
+- `dependabot/npm_and_yarn/lint-staged-17.0.7` (majeure → vérifier changelog)
 
 ### 3. Cleanup branches stale (~2 min)
 
-Après que Sprint 9 pgTAP soit mergé, exécute en local :
+Après que Sprint 11 soit confirmé mergé en local :
 
 ```bash
 git push origin --delete \
-  feat/audit-sprint-1 \
-  feat/audit-sprint-2 \
-  feat/audit-sprint-3 \
-  feat/audit-sprint-4 \
-  feat/audit-sprint-5 \
-  feat/audit-sprint-6 \
-  feat/audit-sprint-7-sec \
-  feat/audit-sprint-8-wording \
-  feat/audit-sprint-9-pgtap \
-  chore/claude-skills \
-  fix/get-my-favorites-column
+  feat/audit-sprint-1 feat/audit-sprint-2 feat/audit-sprint-3 \
+  feat/audit-sprint-4 feat/audit-sprint-5 feat/audit-sprint-6 \
+  feat/audit-sprint-7-sec feat/audit-sprint-8-wording \
+  feat/audit-sprint-9-pgtap feat/audit-sprint-10 feat/audit-sprint-11-e2e \
+  chore/claude-skills fix/get-my-favorites-column
 ```
 
-Ces branches sont toutes mergées via squash sur main (ou superseded par Sprint 9 dans le cas de `fix/get-my-favorites-column`). Le contenu est préservé dans l'historique main.
-
-### Bilan attendu post Sprint 10 + actions user-side
-
-- Bundle index gzip réduit (~6 KB éco Leaflet CSS)
-- Icônes PWA propres iOS/Android
-- 5 PRs Dependabot fermées (deps à jour)
-- Repo nettoyé (11 branches feat/audit + 1 chore + 1 fix supprimées)
-- Toast reconnexion : plus de splash silencieux
-- JSDoc datés cleanup
+13 branches à supprimer (toutes squash/merge sur main).
 
 ---
 
-## 🧪 Sprint 11 — Playwright E2E (livré)
-
-Sprint 11 livre le harnais E2E + 5 golden paths Playwright + workflow CI nightly. Toutes les specs tournent contre une **Supabase locale Docker** (zéro coût, zéro pollution de prod).
-
-### Aucune action Supabase post-merge
+## Annexe D — Sprint 11 E2E : pas d'action Supabase prod requise
 
 Sprint 11 ne touche pas `schema.sql` ni les Edge Functions → **rien à déployer côté Supabase prod**.
 
-### Pour lancer les tests E2E en local (optionnel)
+Pour lancer les tests E2E en local (optionnel) :
 
 ```powershell
-# 1. Prérequis
-# - Docker Desktop running
-# - scoop install supabase (ou npm i -g supabase)
-# - psql dans le PATH
-
-# 2. Installer Playwright browsers
+# Prérequis : Docker Desktop, Supabase CLI (scoop install supabase), psql
 npx playwright install chromium
-
-# 3. Boot stack local + apply schema + seed
-npm run test:e2e:setup
-
-# 4. Lancer les tests
+npm run test:e2e:setup    # boot Supabase local + apply schema + seed
 npm run test:e2e          # headless
-npm run test:e2e:ui       # UI interactif (debug)
+npm run test:e2e:ui       # UI interactif debug
 ```
 
-Détail complet dans [e2e/README.md](../e2e/README.md).
+Détail dans [e2e/README.md](../e2e/README.md) et [docs/TESTING.md](TESTING.md).
 
 ### Lancer manuellement le workflow CI
 
@@ -234,19 +209,4 @@ GitHub UI → Actions → "E2E Playwright" → Run workflow. Ou :
 gh workflow run "E2E Playwright"
 ```
 
-Le workflow tourne aussi automatiquement chaque nuit à **03:30 UTC**. En cas de fail, le trace artifact est uploadé (téléchargeable depuis l'onglet Actions).
-
-### Limitations connues (documenté)
-
-- Email confirmation **désactivée** dans `supabase/config.toml` (`enable_confirmations = false`) pour tester signup → login direct
-- Photon/Nominatim **mockés** via `page.route(...)` pour éviter les rate-limits en CI
-- Notifications mail/push **non couvertes** par les E2E (couvert par pgTAP + tests unitaires)
-- Friend rate-limit (20/24h) → reset DB entre 2 runs si nécessaire
-
-### Bilan Sprint 11
-
-- 5 golden paths : signup, ajout piano, MAJ piano, suppression compte, friend workflow
-- 1 workflow CI nightly (zero coût additionnel — 25 min max par run)
-- Setup local 1-command (`npm run test:e2e:setup`)
-- Trace + video + screenshot conservés en cas d'échec
-- Documentation complète ([e2e/README.md](../e2e/README.md))
+Le workflow tourne aussi automatiquement chaque nuit à **03:30 UTC**. Trace artifact uploadé en cas d'échec (téléchargeable depuis Actions, rétention 7j).

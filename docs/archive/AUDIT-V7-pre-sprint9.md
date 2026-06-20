@@ -1,4 +1,28 @@
-# PianoWorld — Audit v7
+# PianoWorld — Audit v7 (archivé pre-Sprint 9)
+
+> 📌 **Document archivé le 2026-06-20**. Audit conduit avant les Sprints 9-11. De nombreux findings P0/P1 ont été résolus depuis. Conservé pour la méthodologie et l'historique des décisions, **pas pour le statut courant**.
+>
+> Pour le statut actuel, voir :
+>
+> - [CLAUDE.md § Sprints récents (6-11)](../../CLAUDE.md) — commits livrés et backlog actif
+> - [docs/POST-DEPLOY.md](../POST-DEPLOY.md) — actions post-merge et backlog opérationnel
+> - [docs/SECURITY.md § Backlog](../SECURITY.md) — état sécurité courant
+>
+> ## Findings de cet audit déjà résolus dans Sprints 9-11
+>
+> - ✅ **B.4 pgTAP RLS tests** absents → **Sprint 9 (cf5f84b)** : 88 assertions / 7 fichiers
+> - ✅ **B.5 Playwright E2E** absents → **Sprint 11 (88509f4)** : 5 golden paths + Supabase local
+> - ✅ **Dialog X button 28px (P1 a11y)** → **résolu** (h-11 w-11 = 44px dans DialogClose)
+> - ✅ **PianoPage header buttons 32px (P1 a11y)** → **résolu** (h-11 w-11)
+> - ✅ **FAB MapPage sans safe-area-inset** → **résolu** ([MapPage.tsx:18](../../src/pages/MapPage.tsx#L18) `style={{ bottom: 'calc(1rem + env(safe-area-inset-bottom))' }}`)
+> - ✅ **`notify_favorite_update` transitional state** → **résolu** (présent dans [`NOTIFICATION_CATEGORIES`](../../src/lib/constants.ts) ligne 103)
+> - ✅ **NavBar 5e icône Users transitional** → **résolu Sprint 6** (cf. [NavBar.tsx](../../src/components/Layout/NavBar.tsx))
+> - ✅ **Photon autocomplete dans AddPianoFlow** → **résolu Sprint 6**
+> - ✅ **A.7 EXIF strip + A.6.4 signup IP rate-limit** → **résolu Sprint 7**
+>
+> ---
+>
+> ## Document original ci-dessous (conservé)
 
 > Audit transversal mené sur l'état v7 (PR-A backend search + favoris + amis livrée, frontend PR-B à venir).
 >
@@ -1136,7 +1160,7 @@ Workflow multi-agents adversarial en 3 phases via le tool Workflow (token budget
 #### [P3] NOTIFICATION_SECTION_LABELS 'Mes pianos' possessif ambigu v7
 
 - **Où** : `src/lib/constants.ts:131-136`
-- **Symptôme** : Label section 'Mes pianos' (132) regroupe notify_comments + notify_piano_updates déclenchés sur les pianos _ajoutés_ par l'user. Avec les favoris v7, 'Mes pianos' devient ambigu : pianos ajoutés ? favoris ?
+- **Symptôme** : Label section 'Mes pianos' (132) regroupe notify*comments + notify_piano_updates déclenchés sur les pianos \_ajoutés* par l'user. Avec les favoris v7, 'Mes pianos' devient ambigu : pianos ajoutés ? favoris ?
 - **Pourquoi (newcomer)** : Newcomer qui a ajouté 0 piano mais 3 favoris voit 'Mes pianos' et active les toggles, attendant les MAJ de favoris — qui ne viennent pas (notify_favorite_update n'est pas listé dans NOTIFICATION_CATEGORIES).
 - **Fix** : Renommer la section en 'Pianos que j'ai ajoutés'. Ajouter une nouvelle section 'Pianos favoris' pour notify_favorite_update (à introduire dans NOTIFICATION_CATEGORIES et NOTIFICATION_SECTION_OF).
 - **Effort** : S · **Impact** : moyen

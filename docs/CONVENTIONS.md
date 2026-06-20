@@ -125,23 +125,23 @@ const {
 
 **Aucune magic number dans le code**. Tout vit dans `constants.ts`, organisé par section commentée :
 
-| Section                     |  Lignes | Constants                                                                                                                                                                                                                                                  |
-| --------------------------- | ------: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Carte / coords              |    9-10 | `DEFAULT_MAP_CENTER = [48.1173, -1.6778]` (Rennes), `DEFAULT_MAP_ZOOM = 13`                                                                                                                                                                                |
-| Distance                    |      13 | `DUPLICATE_DISTANCE_METERS = 50`                                                                                                                                                                                                                           |
-| Champs piano                |   16-18 | `PIANO_COMMENT_MAX`, `PIANO_ADDRESS_MAX`, `REPORT_REASON_MAX = 500`                                                                                                                                                                                        |
-| Photo                       |   21-23 | `PHOTO_MAX_SIZE_MB = 0.2`, `PHOTO_MAX_DIMENSION = 1024`, `PHOTO_JPEG_QUALITY = 0.8`                                                                                                                                                                        |
-| Pseudo                      |   26-28 | 2-30 chars, regex `^[a-zA-Z0-9_\-.]+$`                                                                                                                                                                                                                     |
-| Password                    |      31 | `PASSWORD_MIN_LENGTH = 8`                                                                                                                                                                                                                                  |
-| Geocoding                   |      34 | `GEOCODE_AUTOCOMPLETE_LIMIT = 5`                                                                                                                                                                                                                           |
-| User search                 |   37-38 | `USER_SEARCH_MIN_CHARS = 2`, `USER_SEARCH_MAX_RESULTS = 20`                                                                                                                                                                                                |
-| Recent feed                 |      41 | `RECENT_FEED_LIMIT = 15`                                                                                                                                                                                                                                   |
-| Storage keys                |   44-45 | `TUTORIAL_STORAGE_KEY`, `THEME_STORAGE_KEY`                                                                                                                                                                                                                |
-| Photo bucket                |      48 | `PHOTO_BUCKET = 'piano-photos'`                                                                                                                                                                                                                            |
-| v2 activity                 |   50-71 | `SESSION_DURATION_OPTIONS`, `SESSION_DURATION_MIN/MAX = 5/240`, `SESSION_FUTURE_DAYS_MAX = 7`, `VISITS_DISPLAY_LIMIT`, `VISITORS_HEADLINE_ROTATION_MS = 4000`, `ACTIVE_SESSIONS_STALE_MS = 30_000`                                                         |
-| v3 events/requests          |   73-85 | `EVENT_TITLE_MAX = 120`, `EVENT_DESCRIPTION_MAX = 2000`, `EVENT_LOCATION_MAX = 200`, `REQUEST_SUBJECT_MAX = 120`, `REQUEST_MESSAGE_MAX = 2000`, `REQUESTS_LAST_SEEN_KEY`                                                                                   |
-| v4 notifications            |  87-157 | `NOTIFICATION_CATEGORIES` (8 entrées post-v6, à étendre à 9 en v7 PR-B), `NOTIFICATION_LABELS`, `NOTIFICATION_SECTION_OF`, `NOTIFICATION_SECTION_LABELS`, `COOKIE_CONSENT_KEY`, `PUSH_OPT_IN_KEY`, `VAPID_PUBLIC_KEY_FALLBACK`, `RATE_LIMITS` (mirror SQL) |
-| v6 friends + presence + CGU | 159-191 | `FRIENDS_DISPLAY_LIMIT = 200`, `PRESENCE_AVATAR_STACK_LIMIT = 5`, `PRESENCE_STALE_MS = 30_000`, `SESSION_VISIBILITIES`, `SESSION_VISIBILITY_LABELS`, `COMMUNITY_PAST_DAYS = 7`, `COMMUNITY_FUTURE_DAYS = 14`, `CGU_VERSION = '2026-05-30'`                 |
+| Section                     |  Lignes | Constants                                                                                                                                                                                                                                                 |
+| --------------------------- | ------: | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Carte / coords              |    9-10 | `DEFAULT_MAP_CENTER = [48.1173, -1.6778]` (Rennes), `DEFAULT_MAP_ZOOM = 13`                                                                                                                                                                               |
+| Distance                    |      13 | `DUPLICATE_DISTANCE_METERS = 50`                                                                                                                                                                                                                          |
+| Champs piano                |   16-18 | `PIANO_COMMENT_MAX`, `PIANO_ADDRESS_MAX`, `REPORT_REASON_MAX = 500`                                                                                                                                                                                       |
+| Photo                       |   21-23 | `PHOTO_MAX_SIZE_MB = 0.2`, `PHOTO_MAX_DIMENSION = 1024`, `PHOTO_JPEG_QUALITY = 0.8`                                                                                                                                                                       |
+| Pseudo                      |   26-28 | 2-30 chars, regex `^[a-zA-Z0-9_\-.]+$`                                                                                                                                                                                                                    |
+| Password                    |      31 | `PASSWORD_MIN_LENGTH = 8`                                                                                                                                                                                                                                 |
+| Geocoding                   |      34 | `GEOCODE_AUTOCOMPLETE_LIMIT = 5`                                                                                                                                                                                                                          |
+| User search                 |   37-38 | `USER_SEARCH_MIN_CHARS = 2`, `USER_SEARCH_MAX_RESULTS = 20`                                                                                                                                                                                               |
+| Recent feed                 |      41 | `RECENT_FEED_LIMIT = 15`                                                                                                                                                                                                                                  |
+| Storage keys                |   44-45 | `TUTORIAL_STORAGE_KEY`, `THEME_STORAGE_KEY`                                                                                                                                                                                                               |
+| Photo bucket                |      48 | `PHOTO_BUCKET = 'piano-photos'`                                                                                                                                                                                                                           |
+| v2 activity                 |   50-71 | `SESSION_DURATION_OPTIONS`, `SESSION_DURATION_MIN/MAX = 5/240`, `SESSION_FUTURE_DAYS_MAX = 7`, `VISITS_DISPLAY_LIMIT`, `VISITORS_HEADLINE_ROTATION_MS = 4000`, `ACTIVE_SESSIONS_STALE_MS = 30_000`                                                        |
+| v3 events/requests          |   73-85 | `EVENT_TITLE_MAX = 120`, `EVENT_DESCRIPTION_MAX = 2000`, `EVENT_LOCATION_MAX = 200`, `REQUEST_SUBJECT_MAX = 120`, `REQUEST_MESSAGE_MAX = 2000`, `REQUESTS_LAST_SEEN_KEY`                                                                                  |
+| v4 notifications            |  87-157 | `NOTIFICATION_CATEGORIES` (9 entrées : 5 v4 + 3 v6 amis + 1 v7 favori), `NOTIFICATION_LABELS`, `NOTIFICATION_SECTION_OF`, `NOTIFICATION_SECTION_LABELS`, `COOKIE_CONSENT_KEY`, `PUSH_OPT_IN_KEY`, `VAPID_PUBLIC_KEY_FALLBACK`, `RATE_LIMITS` (mirror SQL) |
+| v6 friends + presence + CGU | 159-191 | `FRIENDS_DISPLAY_LIMIT = 200`, `PRESENCE_AVATAR_STACK_LIMIT = 5`, `PRESENCE_STALE_MS = 30_000`, `SESSION_VISIBILITIES`, `SESSION_VISIBILITY_LABELS`, `COMMUNITY_PAST_DAYS = 7`, `COMMUNITY_FUTURE_DAYS = 14`, `CGU_VERSION = '2026-05-30'`                |
 
 ### `RATE_LIMITS` — mirror SQL
 
@@ -320,6 +320,134 @@ npm run test:coverage     # rapport coverage v8
 npm test -- -u            # update snapshots
 npx vitest run --update   # alternative explicite
 ```
+
+---
+
+## 7.b pgTAP RLS tests (SQL — Sprint 9)
+
+Le 2e tier de tests : valider **comportement réel** des policies RLS et des RPCs SECURITY DEFINER. Le snapshot Vitest fige la signature des policies/RPCs (texte SQL), mais ne **prouve pas** qu'une policy bloque/autorise effectivement les bons rôles. pgTAP comble ce gap.
+
+### Structure
+
+- **7 fichiers** dans [supabase/tests/](../supabase/tests/) — un par axe (tables invisibles, profiles grants, sessions visibility, favorites, RPC admin guards, friend workflow, rate-limits) + un `_setup.sql` (helpers `pgtap_helpers.uid_for`, `create_test_user`, `friendship_id_between`).
+- **88 assertions** au total (cf. `grep -c "^select ok\|^select is\|^select isnt\|^select throws\|^select lives" supabase/tests/*.sql`).
+- Chaque fichier : `begin; select plan(N); ... assertions ... ; select finish(); rollback;` — isolation transactionnelle, zero pollution prod.
+
+### Pattern test
+
+```sql
+begin;
+select plan(3);
+
+-- Setup : create 2 users via helper
+do $$
+declare
+  v_alice uuid := pgtap_helpers.create_test_user('alice', 'user');
+  v_bob   uuid := pgtap_helpers.create_test_user('bob', 'user');
+begin
+  -- Simule auth.uid() = alice via JWT claim
+  perform set_config('request.jwt.claim.sub', v_alice::text, true);
+end $$;
+
+-- Assertion : alice voit son piano favori
+set local role authenticated;
+select set_config('request.jwt.claim.sub', pgtap_helpers.uid_for('alice')::text, true);
+select ok(
+  exists(select 1 from public.get_my_favorites()),
+  'alice voit ses favoris via RPC'
+);
+
+select * from finish();
+rollback;
+```
+
+### Run
+
+```powershell
+./scripts/run-pgtap.ps1
+```
+
+Le runner :
+
+- Détecte Supabase CLI via PATH ou `$env:USERPROFILE\scoop\shims\supabase.exe`
+- Boucle sur `supabase/tests/0*.sql`
+- `supabase db query --file <test.sql> --linked` pour chaque fichier
+- Parse plan vs ok N, agrège pass/fail/total
+- Exit code 1 si un test échoue
+
+### Quand exécuter
+
+- **Après chaque modif de policy / RPC / grant dans schema.sql** (en plus du snapshot Vitest).
+- **PAS en pre-commit** (trop lent + requiert Supabase CLI + DB linked).
+- **PAS PR-gated** (laisse à l'auteur du PR de lancer manuellement).
+- Garde-fou : la `security-snapshot.test.ts` Vitest force déjà un diff explicite en CI.
+
+### 2 bugs SQL trouvés via pgTAP (Sprint 9)
+
+- `get_my_favorites.pu.updated_at` → la colonne n'existe pas (c'est `created_at`). Détecté Sprint 7 sécu deploy via SQL Editor.
+- `queue_favorite_update_notification.new.quality` → la colonne n'existe pas (c'est `new.new_quality`). Détecté par pgTAP test 04.
+
+Voir [supabase/tests/README.md](../supabase/tests/README.md) pour le détail.
+
+---
+
+## 7.c Playwright E2E tests (Sprint 11)
+
+Le 3e tier : tester **les golden paths end-to-end** dans un vrai navigateur, contre une Supabase locale Docker (zéro pollution prod, zéro coût).
+
+### Structure
+
+- **5 specs** dans [e2e/golden/](../e2e/golden/) :
+  1. `01-signup.spec.ts` — signup → auto-login → carte + variantes (pseudo dup, CGU)
+  2. `02-add-piano.spec.ts` — autocomplete Photon mocké → submit
+  3. `03-update-piano.spec.ts` — alice MAJ son piano fixture
+  4. `04-delete-account.spec.ts` — re-auth password + cascade + re-login impossible
+  5. `05-friend-workflow.spec.ts` — alice envoie demande → bob accepte
+- **Fixtures** dans [e2e/fixtures/](../e2e/fixtures/) — `seed.sql` (alice, bob, 1 piano Rennes) + `auth.ts` helpers (signIn, signOut, FIXTURE_USERS, newSignupCredentials)
+- **Config** : [playwright.config.ts](../playwright.config.ts) — Chromium headless, trace/video on failure, auto-start dev server via `npm run dev` localement
+- **CI** : [.github/workflows/e2e.yml](../.github/workflows/e2e.yml) — manual + cron nightly `30 3 * * *`. PAS PR-gated.
+
+### Pattern spec
+
+```ts
+import { test, expect } from '@playwright/test'
+import { signIn, FIXTURE_USERS, FIXTURE_PIANO_ID } from '../fixtures/auth'
+
+test.describe('update piano', () => {
+  test('alice MAJ son piano fixture', async ({ page }) => {
+    await signIn(page, FIXTURE_USERS.alice.email, FIXTURE_USERS.alice.password)
+    await page.goto(`/piano/${FIXTURE_PIANO_ID}`)
+    await page.getByRole('button', { name: /mettre à jour/i }).click()
+    await page.getByRole('button', { name: /^oui$/i }).click()
+    await page.getByLabel(/commentaire/i).fill('MAJ E2E')
+    await page.getByRole('button', { name: /enregistrer/i }).click()
+    await expect(page.getByText(/mise à jour enregistrée/i)).toBeVisible()
+  })
+})
+```
+
+### Sélecteurs : préférer ARIA
+
+`getByRole`, `getByLabel`, `getByText` (pas de classes CSS fragiles). Voir [Playwright best practices](https://playwright.dev/docs/best-practices#use-locators).
+
+### Run
+
+```powershell
+# Prérequis : Docker Desktop, Supabase CLI, psql, Node 20+
+npx playwright install chromium
+npm run test:e2e:setup    # boot Supabase local + apply schema + seed
+npm run test:e2e          # headless
+npm run test:e2e:ui       # debug interactif
+```
+
+### Quand exécuter
+
+- **Manuel** en pré-merge si tu as modifié un golden path (form, RPC critique, page lazy).
+- **CI nightly** auto à 03:30 UTC.
+- **PAS PR-gated** (garde le check PR rapide ~3 min vitest+lint+build).
+- Mocks Photon/Nominatim via `page.route(...)` → tests offline-safe.
+
+Détail dans [e2e/README.md](../e2e/README.md) et stratégie globale dans [docs/TESTING.md](TESTING.md).
 
 ---
 

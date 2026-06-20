@@ -31,11 +31,11 @@ create table public.notifications_outbox (
 
 Indexes :
 
-- `notifications_outbox_pending_idx` partial `WHERE status = 'pending'` (utilisé par `list_pending_notifications`)
+- `notifications_outbox_pending_idx` partial `WHERE sent_at is null` (utilisé par `list_pending_notifications`)
 - `notifications_outbox_recipient_idx` `(recipient_id, created_at desc)`
-- `notifications_outbox_status_idx` `(status, next_retry_at)` (utilisé par pg_cron retry)
+- `notifications_outbox_status_idx` partial `(status, next_retry_at) WHERE status = 'pending'` (utilisé par pg_cron retry)
 
-**RLS** : SELECT admin only ([schema.sql:660-661](../supabase/schema.sql#L660-L661)). L'Edge Function bypass via `service_role`.
+**RLS** : SELECT admin only. L'Edge Function bypass via `service_role`.
 
 ### Database Webhook
 
@@ -43,7 +43,7 @@ Supabase Database Webhook POST chaque INSERT vers l'Edge Function `send-notifica
 
 ### Retry / backoff / DLQ
 
-`mark_notification_sent(notif_id, err)` ([schema.sql:1707-1754](../supabase/schema.sql#L1707-L1754)) :
+`mark_notification_sent(notif_id, err)` ([schema.sql:1722](../supabase/schema.sql#L1722)) :
 
 - **Succès** (err null) → `status='sent'`, `sent_at=now()`
 - **Erreur** → `attempts += 1`, `next_retry_at = now() + (2 ^ attempts) min` = 2, 4, 8, 16, 32 min
@@ -114,7 +114,7 @@ AFTER INSERT sur `events`. **Set-based** : un seul `INSERT ... SELECT ... FROM p
 
 Pas un trigger mais inline dans la RPC `reply_to_request` ([schema.sql:829-840](../supabase/schema.sql#L829-L840)). Enqueue une notif `request_reply` pour l'auteur de la demande à la fin de la mutation.
 
-### `queue_friend_arriving_notification` (v6, [schema.sql:2004-2065](../supabase/schema.sql#L2004-L2065))
+### `queue_friend_arriving_notification` (v6, [schema.sql:2019](../supabase/schema.sql#L2019))
 
 AFTER INSERT sur `piano_sessions`. **Set-based avec CTE `eligibles`** :
 
@@ -144,7 +144,7 @@ Skip si :
 - `new.starts_at < now() - interval '5 minutes'` (anti-backfill)
 - `new.visibility = 'public'` ? Non — visibility `public` fait quand même fan-out aux amis (logique : tu veux que tes amis sachent où tu vas jouer, même si la session est publique).
 
-### `queue_favorite_update_notification` (v7, [schema.sql:2567-2596](../supabase/schema.sql#L2567-L2596))
+### `queue_favorite_update_notification` (v7, [schema.sql:2582](../supabase/schema.sql#L2582))
 
 AFTER INSERT sur `piano_updates`. **Set-based** :
 
@@ -318,11 +318,7 @@ Le toggle séparé `push_enabled` gouverne uniquement le canal push (le mail par
 
 Optimistic update via `useNotificationPreferences` ([src/hooks/useNotificationPreferences.ts](../src/hooks/useNotificationPreferences.ts)) — merge `prev + patch` en cache, rollback `prev` en `onError`, invalidation finale en `onSettled`.
 
-### ⚠️ Transitional state v7 PR-A
-
-**`notify_favorite_update`** existe en DB ([schema.sql:2560-2561](../supabase/schema.sql#L2560-L2561)) + dans `KIND_TO_PREF` (Edge Function) + dans `DEFAULTS` ([useNotificationPreferences.ts:24](../src/hooks/useNotificationPreferences.ts#L24)) — mais n'est **PAS** encore enregistré dans `NOTIFICATION_CATEGORIES` ([src/lib/constants.ts:92-102](../src/lib/constants.ts#L92-L102)) côté UI.
-
-**Conséquence** : tant que PR-B v7 n'est pas mergée, le toggle n'apparaît pas dans Settings → Notifications. Les users reçoivent les notifs MAJ favoris (default `true`) sans pouvoir opt-out via UI. À fixer dans PR-B v7 en ajoutant l'entry au tableau `NOTIFICATION_CATEGORIES` + `NOTIFICATION_LABELS` + `NOTIFICATION_SECTION_OF` (section `pianos`).
+> ℹ️ Le toggle `notify_favorite_update` (v7) est **désormais présent** dans `NOTIFICATION_CATEGORIES` ([src/lib/constants.ts:103](../src/lib/constants.ts#L103)) et `NOTIFICATION_SECTION_OF` (section `pianos`) — livré avec PR-B v7. Plus de transitional state.
 
 ---
 

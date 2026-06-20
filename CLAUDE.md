@@ -2,7 +2,9 @@
 
 Carte interactive et communautaire des pianos publics. Stack React + Vite + Supabase + Leaflet, 100% gratuit à héberger, mobile-first, PWA installable. Démarrage focalisé sur Rennes mais carte ouverte partout.
 
-État actuel : **v7 en cours**. v1→v5 livrées (notifications, communauté, audit log, RGPD complet, sécurité durcie). v6 livrée (système d'amitié bidirectionnel + visibility sessions friends/public + compteur présence). **PR-A v7 backend** livrée (recherche unifiée users/pianos via pg_trgm + first_name/last_name opt-in + pianos favoris + notif `piano_favorite_update`). **PR-B v7 frontend à venir** (SearchTabs + FavoriteButton + FavoritesTab + NavBar 5e icône Amis + EditNamesDialog).
+État actuel : **v7 livrée + Sprints 6-11 fusionnés sur main**. v1→v5 livrées (notifications, communauté, audit log, RGPD complet, sécurité durcie). v6 livrée (système d'amitié bidirectionnel + visibility sessions friends/public + compteur présence). v7 PR-A backend + PR-B frontend livrées (recherche unifiée users/pianos via pg_trgm + first_name/last_name opt-in + pianos favoris + notif `piano_favorite_update` + SearchTabs + FavoriteButton + FavoritesTab + NavBar 5e icône Amis + EditNamesDialog + FriendsPage standalone). Sprints audit 6-11 livrés : UX heuristics fixes, sécu A.7 EXIF strip + A.6.4 signup IP rate-limit, wording "session"→"créneau", pgTAP RLS tests (88 assertions), hygiène code, Playwright E2E golden paths + Supabase local + nightly CI.
+
+Voir la section [Sprints récents (6-11)](#sprints-récents-6-11) ci-dessous pour le détail commit par commit.
 
 ---
 
@@ -18,7 +20,9 @@ Ce fichier est l'**entry point** : conventions clés, gotchas, où trouver quoi.
 | Système de notifications (outbox + Edge Function + templates + push)           | [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md)     |
 | Conventions code (logger, errors, schemas, tests, lint, prettier, commits)     | [docs/CONVENTIONS.md](docs/CONVENTIONS.md)         |
 | Setup local + CI/CD + Vercel + Edge Function deploy + pg_cron                  | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)         |
+| Stratégie de tests (Vitest unit, pgTAP RLS, Playwright E2E)                    | [docs/TESTING.md](docs/TESTING.md)                 |
 | Référence détaillée des features par version                                   | [docs/FONCTIONNALITES.md](docs/FONCTIONNALITES.md) |
+| Actions user post-merge + backlog opérationnel                                 | [docs/POST-DEPLOY.md](docs/POST-DEPLOY.md)         |
 | Stratégie de branche solo + conventional commits                               | [BRANCHING.md](BRANCHING.md)                       |
 
 ---
@@ -46,9 +50,11 @@ Ce fichier est l'**entry point** : conventions clés, gotchas, où trouver quoi.
 | Web Push              | web-push + VAPID + Service Worker                          | Notification mobile/desktop opt-in                     |
 | Erreurs prod          | Sentry (`@sentry/react`)                                   | Free tier 5k events/mois + scrubber PII                |
 | Tests unitaires       | Vitest 2 + @testing-library/react + jsdom                  | Watch instantané, jest-compatible                      |
+| Tests RLS SQL         | pgTAP 1.3.3 (Sprint 9)                                     | 88 assertions sur policies + RPCs (BEGIN/ROLLBACK)     |
+| Tests E2E             | Playwright 1.61 + Supabase local Docker (Sprint 11)        | 5 golden paths, nightly cron CI, manual dispatch       |
 | Lint & format         | ESLint 9 (flat) + Prettier + plugin-tailwindcss            | Auto-format au commit                                  |
 | Hooks Git             | Husky + lint-staged + commitlint                           | pre-commit + commit-msg enforced                       |
-| CI                    | GitHub Actions (typecheck + lint + test + build + audit)   | Bloque les merges cassés                               |
+| CI                    | GitHub Actions (typecheck + lint + test + build + audit)   | Bloque les merges cassés. E2E séparé (nightly/manual)  |
 | Veille deps           | Dependabot weekly grouped                                  | PR automatiques minor + patch                          |
 | Hébergement           | Vercel                                                     | `vercel.json` configuré, auto-deploy main              |
 
@@ -91,11 +97,11 @@ try {
 
 ### Validation — zod schemas dans `src/lib/schemas.ts`
 
-Tout formulaire utilise un schema centralisé. Si tu changes une longueur max, change-le ici, pas dans le composant. v7 PR-B ajoutera `profileNamesSchema` + `emailSearchSchema`.
+Tout formulaire utilise un schema centralisé. Si tu changes une longueur max, change-le ici, pas dans le composant. v7 a ajouté `profileNamesSchema` + `emailSearchSchema` (livrés Sprint 11).
 
 ### Constantes — aucune magic number dans le code
 
-`src/lib/constants.ts` regroupe coords Rennes, 50m doublons, 200 Ko photo, regex pseudo, `NOTIFICATION_CATEGORIES` (8 entrées — `notify_favorite_update` à ajouter en v7 PR-B), `RATE_LIMITS` (mirror SQL), `CGU_VERSION`, v6 `FRIENDS_DISPLAY_LIMIT` / `PRESENCE_AVATAR_STACK_LIMIT` / `SESSION_VISIBILITIES`.
+`src/lib/constants.ts` regroupe coords Rennes, 50m doublons, 200 Ko photo, regex pseudo, `NOTIFICATION_CATEGORIES` (9 entrées : 5 v4 + 3 v6 amis + 1 v7 favori), `RATE_LIMITS` (mirror SQL), `CGU_VERSION`, v6 `FRIENDS_DISPLAY_LIMIT` / `PRESENCE_AVATAR_STACK_LIMIT` / `SESSION_VISIBILITIES`.
 
 ### TypeScript — `type` pas `interface` pour Supabase
 
@@ -110,9 +116,11 @@ className={cn('base classes', isActive && 'active classes')}
 
 Prettier + `prettier-plugin-tailwindcss` trient les classes automatiquement au commit.
 
-### Tests — Vitest + Testing Library
+### Tests — trois tiers
 
-Convention miroir `__tests__/`. Couverture cible : **65% sur `src/lib/`** (seuil bloquant en CI), objectif 80% à terme. Snapshot des policies/RPCs/grants RLS dans `security-snapshot.test.ts` — toute modif `schema.sql` force un diff explicite (`npm test -- -u` après revue).
+1. **Vitest unit/lib** ([docs/TESTING.md §1](docs/TESTING.md#vitest)) — convention miroir `__tests__/`. Couverture cible : **65% sur `src/lib/`** (seuil bloquant en CI), objectif 80% à terme. Snapshot des policies/RPCs/grants RLS dans `security-snapshot.test.ts` — toute modif `schema.sql` force un diff explicite (`npm test -- -u` après revue).
+2. **pgTAP RLS SQL** ([docs/TESTING.md §2](docs/TESTING.md#pgtap) + [supabase/tests/README.md](supabase/tests/README.md)) — 88 assertions sur 7 fichiers couvrant policies + RPC guards + rate-limits + grants. Run via `./scripts/run-pgtap.ps1`. Pas CI-bloquant (manuel après modif schema).
+3. **Playwright E2E** ([docs/TESTING.md §3](docs/TESTING.md#playwright) + [e2e/README.md](e2e/README.md)) — 5 golden paths contre Supabase locale Docker. Run via `npm run test:e2e`. CI nightly + manual dispatch (PAS PR-gated pour garder le check rapide).
 
 ### Conventional commits + branches
 
@@ -167,9 +175,7 @@ Pour le modèle de sécurité complet (RLS pattern, threat model, backlog, sub-R
 
 Pattern **outbox transactionnel** : trigger DB → `notifications_outbox` → webhook → Edge Function `send-notification` (re-fetch row depuis DB, jamais le payload webhook) → filtre prefs + banned → re-vérif spécifique (friend_arriving check `are_friends_safe` à delivery time) → mail Resend + push web-push → `mark_notification_sent` (backoff exponentiel 2/4/8/16/32 min, DLQ à la 5e). Purge nightly via pg_cron.
 
-**9 notification kinds (post v7)** : `piano_comment, piano_update, session_conflict, request_reply, event_created` (v4) + `friend_arriving, friend_request_received, friend_request_accepted` (v6) + `piano_favorite_update` (v7).
-
-⚠️ **Transitional state v7 PR-A** : `notify_favorite_update` existe en DB (colonne + KIND_TO_PREF) mais n'est PAS encore dans `NOTIFICATION_CATEGORIES` côté `src/lib/constants.ts` → le toggle UI sera invisible jusqu'à PR-B v7. Conséquence : les users reçoivent les notifs MAJ favoris sans pouvoir opt-out via UI tant que PR-B n'est pas mergée. À fixer dans PR-B v7.
+**9 notification kinds (v7 livré)** : `piano_comment, piano_update, session_conflict, request_reply, event_created` (v4) + `friend_arriving, friend_request_received, friend_request_accepted` (v6) + `piano_favorite_update` (v7). Tous opt-in via Settings → Notifications (toggles `notify_*` mirrorés dans [src/lib/constants.ts:92-104](src/lib/constants.ts#L92-L104)).
 
 ---
 
@@ -184,27 +190,38 @@ src/
                                   # + __tests__/ (Vitest + security-snapshot RLS)
   contexts/                       # AuthContext (useAuth re-exporté ici, PAS dans hooks/), ThemeContext
   hooks/                          # tous TanStack Query (sauf useGeolocation/useOnline)
-                                  # 17 hooks dont useFriends (v6), usePianoPresence (v6)
-                                  # v7 PR-B ajoutera : usePianoSearch, useEmailSearch, useFavorites
+                                  # useFriends (v6), usePianoPresence (v6),
+                                  # usePianoSearch + useEmailSearch + useFavorites (v7)
   components/
     ui/                           # primitives (Button CVA, Dialog sans focus trap,
-                                  # Tabs sans ArrowKey handler, Avatar HSL hash, etc.)
+                                  # Tabs sans ArrowKey handler, Avatar HSL hash, HelpTooltip, etc.)
     Auth/ Map/ Piano/ Layout/ Onboarding/ Settings/ Admin/ Community/ Events/ Requests/
     Friends/                      # v6 — FriendsTab + FriendCard + AddFriendButton (5 états)
                                   # + RemoveFriendDialog (confirmation textuelle "retirer")
-    Dashboard/ActivityTab.tsx
-  pages/                          # toutes lazy : AuthPage, MapPage, Dashboard (5 tabs),
-                                  # SearchPage, SettingsPage, UserPage, PianoPage, LegalPage, AdminPage
+    Search/                       # v7 — SearchTabs + UserSearchTab + PianoSearchTab + EmailSearchDialog
+    Dashboard/ActivityTab.tsx + FavoritesTab.tsx (v7)
+  pages/                          # toutes lazy : AuthPage, MapPage, Dashboard (4 tabs),
+                                  # SearchPage, SettingsPage, UserPage, FriendsPage (v7),
+                                  # PianoPage, LegalPage, AdminPage
   test/setup.ts
   types/database.ts               # Database type + enums + v6/v7 types (Friendship, PianoFavorite, ...)
 
 supabase/
-  schema.sql                      # 15 sections (1-11 cœur, 12 bootstrap, 13 setup, 14 v6, 15 v7)
+  schema.sql                      # 3173 lignes / 16 sections (1-11 cœur, 12 bootstrap, 13 setup,
+                                  #  14 v6 friendships, 15 v7 search/favoris, 16 v7 sécu signup IP)
+  config.toml                     # Sprint 11 — config Supabase local Docker (E2E)
   functions/send-notification/    # Edge Function Deno (Resend + web-push) + 9 templates
+  functions/signup-protected/     # Sprint 7 sécu — Edge Function rate-limit signup par IP
+  tests/                          # Sprint 9 — pgTAP RLS tests (7 fichiers, 88 assertions)
+
+e2e/                              # Sprint 11 — Playwright golden paths + fixtures + README
+scripts/
+  run-pgtap.ps1                   # runner pgTAP local
+  setup-e2e-db.ps1                # 1-cmd boot Supabase local + apply schema + seed
 
 # Racine
 BRANCHING.md, CLAUDE.md, docs/, eslint.config.js, commitlint.config.js, vitest.config.ts,
-.husky/, .github/, .prettierrc.json, vercel.json
+playwright.config.ts, .husky/, .github/, .prettierrc.json, vercel.json
 ```
 
 ---
@@ -212,22 +229,34 @@ BRANCHING.md, CLAUDE.md, docs/, eslint.config.js, commitlint.config.js, vitest.c
 ## Commandes
 
 ```powershell
+# Dev & build
 npm run dev              # http://localhost:5173
 npm run build            # tsc -b + vite build
 npm run preview          # serve dist/ pour test prod
 npm run typecheck        # tsc -b --noEmit
+
+# Lint & format
 npm run lint             # eslint .
 npm run lint:fix         # eslint . --fix
 npm run format           # prettier --write src/**/*
 npm run format:check     # prettier --check
+
+# Tests unitaires (Vitest)
 npm test                 # vitest run (CI mode)
 npm run test:watch       # vitest interactive
 npm run test:coverage    # rapport coverage v8
 npm test -- -u           # update snapshots (après modif schema.sql)
-npx vitest run --update  # alternative explicite update snapshot
+
+# Tests E2E (Playwright + Supabase local Docker — Sprint 11)
+npm run test:e2e:setup   # boot Supabase local + apply schema.sql + seed.sql
+npm run test:e2e         # playwright test (headless chromium)
+npm run test:e2e:ui      # playwright test --ui (debug interactif)
+
+# Tests pgTAP RLS (Sprint 9)
+./scripts/run-pgtap.ps1  # 88 assertions sur la DB linked (BEGIN/ROLLBACK isolé)
 ```
 
-Pre-commit hook lance automatiquement `lint-staged` (eslint --fix + prettier --write) + `tsc --noEmit`. Commit-msg hook lance commitlint. Pas besoin de penser à `npm run lint` avant le commit.
+Pre-commit hook lance automatiquement `lint-staged` (eslint --fix + prettier --write) + `tsc --noEmit`. Commit-msg hook lance commitlint. **E2E et pgTAP ne sont PAS lancés en pre-commit** (trop lents + dépendances Docker/Supabase CLI) — ils tournent manuellement ou via CI nightly. Voir [docs/TESTING.md](docs/TESTING.md) pour la stratégie complète.
 
 ---
 
@@ -324,14 +353,6 @@ Ne fonctionnent qu'avec PWA installée ("Ajouter à l'écran d'accueil"), pas en
 
 Si tu changes le manifest, des URLs de tuiles ou des stratégies de cache dans `vite.config.ts`, le SW déjà installé peut continuer à servir des assets obsolètes. Le `registerType: 'autoUpdate'` + `clientsClaim: true` + `skipWaiting: true` + `cleanupOutdatedCaches: true` + stratégies `StaleWhileRevalidate` (vs CacheFirst) corrigent au prochain refetch. Pour test propre en preview : navigation privée OU `DevTools → Application → Service Workers → Unregister` puis `Cmd/Ctrl+Shift+R`.
 
-### v7 transitional state — `notify_favorite_update` invisible UI
-
-Voir section Notifications ci-dessus. Tant que PR-B v7 n'est pas mergée, le toggle n'apparaît pas dans Settings → Notifications.
-
-### v7 transitional state — NavBar 5e icône Amis
-
-Aujourd'hui les amis sont accessibles via `/dashboard?tab=friends`. PR-B v7 ajoutera une 5e icône Users → page `/friends` standalone.
-
 ### `useAuth` n'est pas dans `src/hooks/`
 
 Le hook `useAuth` vit dans `src/contexts/AuthContext.tsx`. Tous les consommateurs `import { useAuth } from '@/contexts/AuthContext'`. Ne pas chercher un fichier `src/hooks/useAuth.ts` — il n'existe pas.
@@ -339,14 +360,6 @@ Le hook `useAuth` vit dans `src/contexts/AuthContext.tsx`. Tous les consommateur
 ### AdminPage tabs non URL-synced
 
 Contrairement à `Dashboard` qui utilise `?tab=`, `AdminPage` garde l'onglet en state local → refresh sur `/admin` retombe sur l'onglet KPIs. À synchroniser un jour (item C.4 du backlog).
-
-### Leaflet CSS importée globalement
-
-`src/main.tsx:11` importe `leaflet.css` au top-level → quelques KB de CSS shippés sur les pages non-carte. Migration future : importer dans `MapPage` chunk.
-
-### Dashboard comment header stale
-
-Le commentaire JSDoc en tête de `src/pages/Dashboard.tsx:15-22` dit encore "3 onglets" alors que le code en définit 5 (`activity, community, events, requests, friends`). À nettoyer.
 
 ---
 
@@ -414,32 +427,41 @@ Le commentaire JSDoc en tête de `src/pages/Dashboard.tsx:15-22` dit encore "3 o
 
 ---
 
-## Statut v7
+## Historique versions
 
 - **v1** : auth (login/signup/forgot/reset/delete/export), carte (markers + clustering + filtres + dark), ajout piano, détail + MAJ + historique + édition, recherche pseudo, profil, dashboard, settings, tutoriel, mode sombre, mentions légales, PWA, Sentry, vercel.json.
 - **v2** : Activité — passages ("J'y suis passé") + sessions de présence ("J'y vais") + pulse animé sur la carte pour sessions actives + feed étendu.
 - **v3** : Rôles 3 niveaux (user/admin/superadmin), dashboard admin (KPIs, users, reports, events, requests, roles), bannissement, RPCs admin sécurisées.
 - **v4** : Notifications mail (Resend via Edge Function) + Web Push opt-in + 5 catégories de préférences, onglet Communauté Calendrier/Liste, bandeau cookies RGPD, refonte LegalPage 3 onglets, headers sécurité + CSP, ChangePasswordDialog.
 - **v5** : Durcissement sécurité (RLS column-level grants sur profiles, rate limit bulletproof avec advisory lock, lockout protection superadmin, re-auth password sur RPCs irréversibles, email confirmation Supabase + trigger handle_new_user, CGU checkbox + accept_cgu_at, **audit log admin complet**, RGPD export complet + anonymisation cohérente, outbox retry/backoff/purge), infrastructure tests + DX (Vitest + 66 tests dont snapshot RLS, ESLint flat config, Prettier, Husky, commitlint, GitHub Actions CI, Dependabot, BRANCHING.md), scrubber PII Sentry, headers COOP/COEP/CORP.
-- **v6** : Système d'amitié bidirectionnel (3 tables friendships + friendship_rejections + friend_arriving_dedup, 10 RPCs SECURITY DEFINER, cooldown 30j anti-stalking, auto-accept croisé via advisory lock, ghost-reject silencieux), visibility scope sur piano_sessions (`public`/`friends`) set-once via trigger BEFORE UPDATE, compteur de présence "X session(s) en cours" via batch RPC `get_active_piano_counts` (perf : 1 query au lieu de N), notification `friend_arriving` avec dedup hourly + re-vérif amitié à delivery time, 3 nouvelles préférences notif amis, audit log sur `remove_friendship`.
-- **v7** (en cours) :
-  - **PR-A backend (livrée)** : extensions pg_trgm + unaccent, colonnes `first_name`/`last_name` opt-in sur profiles (column-grants exclus → invisibles via PostgREST direct), 5 indexes GIN trgm (3 profiles + 2 pianos), table `piano_favorites` self-only RLS, notif kind `piano_favorite_update` + colonne `notify_favorite_update`, trigger `queue_favorite_update_notification`, helper `enforce_caller_rate_limit` (rate-limit dans RPC bodies), 6 RPCs : `search_users` (fuzzy 3 cols), `find_user_by_email` (exact-match + rate-limit 5/24h anti-énumération), `search_pianos` (fuzzy address+comment), `update_my_profile_names`, `toggle_piano_favorite` (advisory lock), `get_my_favorites`. `export_my_data` étendu (piano_favorites + friendships).
-  - **PR-B frontend (à venir)** : `SearchTabs` (Utilisateurs/Pianos), `EmailSearchDialog`, `PianoSearchTab`, `FavoriteButton` (Bookmark, variant default + compact), `FavoritesTab` (6e onglet Dashboard ou remplace Amis), `EditNamesDialog` (Settings opt-in noms), `FriendsPage` standalone, **NavBar 5e icône Users** → `/friends`, refactor `Dashboard` (Friends tab → page standalone, Favoris tab ajouté), `notify_favorite_update` ajouté dans `NOTIFICATION_CATEGORIES` (fix transitional UI gap).
+- **v6** : Système d'amitié bidirectionnel (3 tables friendships + friendship_rejections + friend_arriving_dedup, 10 RPCs SECURITY DEFINER, cooldown 30j anti-stalking, auto-accept croisé via advisory lock, ghost-reject silencieux), visibility scope sur piano_sessions (`public`/`friends`) set-once via trigger BEFORE UPDATE, compteur de présence "X créneau(x) en cours" via batch RPC `get_active_piano_counts` (perf : 1 query au lieu de N), notification `friend_arriving` avec dedup hourly + re-vérif amitié à delivery time, 3 nouvelles préférences notif amis, audit log sur `remove_friendship`.
+- **v7** (livrée) :
+  - **PR-A backend** : extensions pg_trgm + unaccent, colonnes `first_name`/`last_name` opt-in sur profiles (column-grants exclus → invisibles via PostgREST direct), 5 indexes GIN trgm (3 profiles + 2 pianos), table `piano_favorites` self-only RLS, notif kind `piano_favorite_update` + colonne `notify_favorite_update`, trigger `queue_favorite_update_notification`, helper `enforce_caller_rate_limit` (rate-limit dans RPC bodies), 6 RPCs : `search_users` (fuzzy 3 cols), `find_user_by_email` (exact-match + rate-limit 5/24h anti-énumération), `search_pianos` (fuzzy address+comment), `update_my_profile_names`, `toggle_piano_favorite` (advisory lock), `get_my_favorites`. `export_my_data` étendu (piano_favorites + friendships).
+  - **PR-B frontend** : `SearchTabs` (Utilisateurs/Pianos), `EmailSearchDialog`, `PianoSearchTab`, `FavoriteButton` (Bookmark, variant default + compact), `FavoritesTab` (4e onglet Dashboard, remplace Communauté fusionné dans Activité), `EditNamesDialog` (Settings opt-in noms), `FriendsPage` standalone, **NavBar 5e icône Users** → `/friends`, refactor `Dashboard` (Friends → page standalone, Favoris ajouté, Communauté fusionnée dans Activité via toggle Sprint 3), `notify_favorite_update` ajouté dans `NOTIFICATION_CATEGORIES`.
 
-**Reste à faire (P2/P3 backlog)** :
+## Sprints récents (6-11)
 
-- A.1.2 chiffrement `push_subscriptions` (vault Supabase nécessaire)
-- A.5 CSP nonces (Vercel middleware Edge — actuellement `'unsafe-inline'` sur script-src + style-src)
-- A.6.3 2FA TOTP admin (Supabase MFA)
-- A.6.4 rate limit signup par IP (Edge Function)
-- A.7 EXIF strip upload (Edge Function `process-photo` — photos peuvent contenir GPS)
-- B.3 component/hook tests (MSW)
-- B.4 tests pgTAP RLS via `supabase test db`
-- B.5 Playwright e2e golden paths
-- C.1 Dialog focus trap (a11y gap connu)
-- C.2 Tabs ArrowLeft/Right keyboard handler (a11y gap connu)
-- C.3 `AddFriendButton.findPendingId` stub retournant null (UX dégradée)
-- C.4 AdminPage tabs URL-synced (refresh perd l'onglet)
-- PWA PNG icons à générer
+Sprints audit livrés après v7. Tous mergés sur main. Voir commits via `git log --oneline | head -20`.
 
-Plan détaillé : `C:\Users\enzor\.claude\plans\j-aimerai-cr-er-une-application-indexed-thunder.md`.
+| Sprint            | Commit    | Livré                                                                                                                                                                                                                                                                                          |
+| ----------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sprint 6 UX       | `e8c7bba` | Audit ux-heuristics : Photon autocomplete dans AddPianoFlow, FriendsPage back-button, HelpTooltip component, Tutorial X header                                                                                                                                                                 |
+| Sprint 7 sécu     | `4b0f098` | **A.7 EXIF strip** (`preserveExif: false` dans `src/lib/photo.ts`) + **A.6.4 signup IP rate-limit** (Edge Function `signup-protected` + table `signup_ip_attempts` + RPC `check_signup_ip_allowed` 5/24h)                                                                                      |
+| Sprint 8 wording  | `709b7b0` | "session" → "créneau" dans l'UI face newcomer + mail templates Edge Function + POST-DEPLOY doc                                                                                                                                                                                                 |
+| Sprint 9 pgTAP    | `cf5f84b` | **B.4 Tests pgTAP RLS** — 88 assertions / 7 fichiers / runner `./scripts/run-pgtap.ps1`. 2 bugs SQL fixés : `get_my_favorites.pu.updated_at` → `created_at`, `queue_favorite_update_notification.new.quality` → `new.new_quality`                                                              |
+| Sprint 10 hygiène | `eb6f274` | Leaflet CSS lazy-chunk (gain ~6 KB index gzip), reconnexion toast 3s+8s dans `AuthContext`, JSDoc cleanup Dashboard/FriendsPage, POST-DEPLOY étendu                                                                                                                                            |
+| Sprint 11 E2E     | `88509f4` | **B.5 Playwright golden paths** — 5 specs (signup, add-piano, update-piano, delete-account, friend-workflow), `supabase/config.toml` (Supabase local Docker), `e2e/fixtures/seed.sql`, runner `./scripts/setup-e2e-db.ps1`, workflow `e2e.yml` (manual + cron nightly), 3 nouveaux npm scripts |
+
+**Backlog actif (P2/P3)** — items restants après Sprint 11 :
+
+- **A.1.2** chiffrement `push_subscriptions` (vault Supabase nécessaire — non dispo free tier)
+- **A.5** CSP nonces (Vercel middleware Edge — actuellement `'unsafe-inline'` sur script-src + style-src). Effort L
+- **A.6.3** 2FA TOTP admin (Supabase MFA dispo mais pas câblé)
+- **B.3** component/hook tests (MSW)
+- **C.1** Dialog focus trap (a11y gap connu)
+- **C.2** Tabs ArrowLeft/Right keyboard handler (a11y gap connu)
+- **C.3** `AddFriendButton.findPendingId` stub retournant null (UX dégradée)
+- **C.4** AdminPage tabs URL-synced (refresh perd l'onglet)
+- **PWA PNG icons** à générer (`public/pwa-192x192.png` + `public/pwa-512x512.png`) via realfavicongenerator.net
+
+Actions post-merge user-side documentées dans [docs/POST-DEPLOY.md](docs/POST-DEPLOY.md). Détail sécurité dans [docs/SECURITY.md](docs/SECURITY.md).

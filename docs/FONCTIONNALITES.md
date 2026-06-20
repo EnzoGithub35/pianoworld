@@ -27,12 +27,13 @@
 
 Les features sont regroupées par **domaine fonctionnel**. Chaque domaine est annoté des 4 angles ci-dessus.
 
-**Données (17 tables au total post-v7)** :
+**Données (19 tables au total post-v7 + Sprint 7 sécu)** :
 
-- **v1-v3** : `profiles`, `pianos`, `piano_updates`, `piano_reports`, `piano_visits`, `piano_sessions`, `events`, `event_participants`, `user_requests`
-- **v4-v5** : `notification_preferences`, `push_subscriptions`, `notifications_outbox`, `rate_limit_buckets`, `audit_log`
-- **v6** (social) : `friendships`, `friendship_rejections`, `friend_arriving_dedup`
-- **v7** (favoris) : `piano_favorites`
+- **v1-v3** : `profiles`, `pianos`, `piano_updates`, `piano_reports`, `piano_visits`, `piano_sessions`, `events`, `event_participants`, `user_requests` (9)
+- **v4-v5** : `notification_preferences`, `push_subscriptions`, `notifications_outbox`, `rate_limit_buckets`, `audit_log` (5)
+- **v6** (social) : `friendships`, `friendship_rejections`, `friend_arriving_dedup` (3)
+- **v7** (favoris + recherche) : `piano_favorites` (1)
+- **v7 Sprint 7 sécu** : `signup_ip_attempts` — rate-limit signup IP 5/24h via RPC `check_signup_ip_allowed` + Edge Function `signup-protected` (1)
 
 ---
 
@@ -179,9 +180,14 @@ Les features sont regroupées par **domaine fonctionnel**. Chaque domaine est an
 
 ### Features
 
-- **5 catégories de préférences** : `notify_comments`, `notify_piano_updates`, `notify_session_conflict`, `notify_request_reply`, `notify_events`.
+- **9 catégories de préférences** (en v4 il y en avait 5 ; v6 a ajouté 3 toggles amis ; v7 a ajouté 1 toggle favoris) :
+  - **v4 (5)** : `notify_comments`, `notify_piano_updates`, `notify_session_conflict`, `notify_request_reply`, `notify_events`
+  - **v6 (3)** : `notify_friend_arriving`, `notify_friend_request_received`, `notify_friend_request_accepted`
+  - **v7 (1)** : `notify_favorite_update`
 - **Opt-in Web Push** séparé (navigateur / mobile).
 - **Pipeline outbox** : triggers DB → table `notifications_outbox` → Edge Function `send-notification` → **email (Resend)** + **Web Push**.
+
+Mirror SQL ↔ TS dans [src/lib/constants.ts:92-104](../src/lib/constants.ts#L92-L104).
 
 ### Analyse
 
@@ -264,7 +270,7 @@ Tableau des mécanismes qui s'appliquent à **toutes** les features ci-dessus :
 | **En-têtes / CSP**               | `vercel.json` : HSTS preload, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Permissions-Policy` restrictive, CSP complète | Réduit XSS, clickjacking, sniffing, fuites referrer                                                                    |
 | **Webhook notif fail-closed**    | 403 sans `x-webhook-secret` ; re-fetch DB (anti-injection payload)                                                                       | L'envoi de notifications n'est pas déclenchable par un tiers                                                           |
 
-**Enjeu global** : le socle sécurité est **solide pour une app de cette taille**. Points d'attention résiduels : confirmation email désactivée (§ 1) et absence de journal d'audit admin (§ 8).
+**Enjeu global** : le socle sécurité est **solide pour une app de cette taille**. Items résiduels (v7 backlog) : CSP `'unsafe-inline'` (A.5), 2FA TOTP admin (A.6.3), chiffrement `push_subscriptions` au repos (A.1.2).
 
 ---
 
@@ -371,9 +377,20 @@ Tableau des mécanismes qui s'appliquent à **toutes** les features ci-dessus :
   - `first_name` / `last_name` : opt-in storage, opt-in display, opt-in lookup. Column-grants exclus → 403 sur `select first_name from profiles`.
   - `piano_favorites` : self-only RLS classique. Pas de rate-limit (PK dédup naturelle).
   - `toggle_piano_favorite` : advisory lock `(uid, 'fav', piano_id)` double-click safe.
-- ⚠️ **Transitional state PR-A** : `notify_favorite_update` existe en DB + KIND_TO_PREF + DEFAULTS hook, MAIS pas encore dans `NOTIFICATION_CATEGORIES` côté `src/lib/constants.ts` → toggle UI invisible jusqu'à PR-B. Les users reçoivent les notifs MAJ favoris sans pouvoir opt-out via UI. À fixer dans PR-B v7.
-- ⚠️ **Transitional state NavBar** : aujourd'hui les amis sont accessibles uniquement via `Dashboard?tab=friends`. PR-B v7 ajoutera la 5e icône + page `/friends` standalone.
 - ⚠️ **Risque outbox bloat** : si un piano populaire (100+ favoriters) reçoit beaucoup de MAJ (10/jour) → 1000+ notif rows/jour. Pas de dedup horaire pour `piano_favorite_update` v1. Backlog : table `favorite_update_dedup` similar au pattern v6 si observed.
+
+**v7 PR-B livrée (Sprint 11)** — `notify_favorite_update` est désormais dans [`NOTIFICATION_CATEGORIES`](../src/lib/constants.ts) (toggle visible Settings → Notifications, section Pianos). Page `/friends` standalone + NavBar 5e icône Users livrées.
+
+### Sprints audit 6-11 (post-v7)
+
+Voir [CLAUDE.md § Sprints récents](../CLAUDE.md) pour le détail commit par commit. Résumé :
+
+- Sprint 6 UX heuristics (Photon autocomplete AddPiano, FriendsPage back-button, HelpTooltip, Tutorial X)
+- Sprint 7 sécu (A.7 EXIF strip via `preserveExif: false` + A.6.4 signup IP rate-limit 5/24h)
+- Sprint 8 wording ("session" → "créneau" UI + mail templates)
+- Sprint 9 pgTAP RLS tests (88 assertions, 7 fichiers, 2 bugs SQL fixés en passant)
+- Sprint 10 hygiène (Leaflet CSS lazy, reconnexion toast 3s+8s, JSDoc cleanup)
+- Sprint 11 Playwright E2E (5 golden paths + Supabase local Docker + nightly CI)
 
 ---
 
@@ -421,23 +438,29 @@ Tableau des mécanismes qui s'appliquent à **toutes** les features ci-dessus :
 | **admin**      | Bannir/débannir (non-superadmin), classer signalements, force-delete piano, créer/annuler événements, répondre aux demandes | Gérer les rôles, bannir un superadmin                   |
 | **superadmin** | Tout admin + promote/demote des rôles                                                                                       | Être banni ou rétrogradé en tant que dernier superadmin |
 
-### Les 13 tables
+### Les 19 tables
 
-| Table                      | Rôle                                    |
-| -------------------------- | --------------------------------------- |
-| `profiles`                 | Identité publique + rôle + bannissement |
-| `pianos`                   | Pianos (soft delete)                    |
-| `piano_updates`            | Historique d'état (immuable)            |
-| `piano_reports`            | Signalements                            |
-| `piano_visits`             | Passages (check-in)                     |
-| `piano_sessions`           | Sessions planifiées / en cours          |
-| `events`                   | Événements communautaires               |
-| `event_participants`       | Inscriptions aux événements             |
-| `user_requests`            | Demandes support + réponses admin       |
-| `notification_preferences` | 5 toggles + push opt-in par user        |
-| `push_subscriptions`       | Souscriptions Web Push (VAPID)          |
-| `notifications_outbox`     | File d'envoi de notifications           |
-| `rate_limit_buckets`       | Comptage interne du rate-limiting       |
+| Table                      | Version | Rôle                                                       |
+| -------------------------- | ------- | ---------------------------------------------------------- |
+| `profiles`                 | v1-v5   | Identité + rôle + bannissement + first/last_name opt-in v7 |
+| `pianos`                   | v1      | Pianos (soft delete)                                       |
+| `piano_updates`            | v1      | Historique d'état (immuable)                               |
+| `piano_reports`            | v1      | Signalements                                               |
+| `piano_visits`             | v2      | Passages (check-in)                                        |
+| `piano_sessions`           | v2-v6   | Sessions planifiées + visibility scope v6 (public/friends) |
+| `events`                   | v2-v3   | Événements communautaires                                  |
+| `event_participants`       | v2      | Inscriptions aux événements                                |
+| `user_requests`            | v3      | Demandes support + réponses admin                          |
+| `notification_preferences` | v4-v7   | 9 toggles + push opt-in par user                           |
+| `push_subscriptions`       | v4      | Souscriptions Web Push (VAPID)                             |
+| `notifications_outbox`     | v4-v5   | File d'envoi de notifications + retry/DLQ                  |
+| `rate_limit_buckets`       | v5      | Comptage interne du rate-limiting                          |
+| `audit_log`                | v5      | Trail des actions admin sensibles                          |
+| `friendships`              | v6      | Relations d'amitié bidirectionnelles                       |
+| `friendship_rejections`    | v6      | Cooldown 30j post-reject (ghost-reject anti-stalking)      |
+| `friend_arriving_dedup`    | v6      | Dedup horaire des notifs `friend_arriving`                 |
+| `piano_favorites`          | v7      | Favoris user → piano (self-only RLS)                       |
+| `signup_ip_attempts`       | v7-S7   | Rate-limit signup IP 5/24h (Sprint 7 sécu, REVOKE ALL)     |
 
 ### Variables d'environnement
 
@@ -450,7 +473,7 @@ Tableau des mécanismes qui s'appliquent à **toutes** les features ci-dessus :
 
 - **Produit** — L'app évolue d'un **annuaire statique** vers une **carte vivante** (sessions, événements, feed communautaire). L'enjeu central est donc la **masse critique** d'utilisateurs actifs : sans densité locale, les sessions et événements restent vides. Le démarrage géolocalisé (Rennes) sert exactement cette logique d'amorçage.
 - **Technique** — Tout le design vise à **tenir sur le free-tier** : Supabase (Storage 1 Go, **pause après 7 j**), Resend (**100 mails/j**), Nominatim (**1 req/s**). Le **filtrage 100 % client** est le principal frein au passage à l'échelle (à terme : fetch par viewport, RPC d'agrégation).
-- **Sécurité / RGPD** — Socle **mature** : RLS partout, rate-limit **atomique** (advisory locks), column-level security, re-authentification sur les actions destructrices, CSP durcie. Restent deux trous connus : **confirmation email désactivée** et **audit admin absent**.
+- **Sécurité / RGPD** — Socle **mature** : RLS partout, rate-limit **atomique** (advisory locks), column-level security, re-authentification sur les actions destructrices, CSP durcie, audit log admin complet (v5), EXIF strip photos (Sprint 7), signup IP rate-limit (Sprint 7), pgTAP RLS tests 88 assertions (Sprint 9). Items résiduels backlog : CSP `'unsafe-inline'` (A.5), 2FA TOTP admin (A.6.3), chiffrement push_subscriptions (A.1.2).
 - **Dette / à finir** — **Icônes PWA** à générer, **retry des notifications** échouées, **purge** des tables `notifications_outbox` / `rate_limit_buckets` / `piano_visits` / `piano_sessions`, et **désynchronisation du `CLAUDE.md`** (annonce « v1 » alors que le code est en v4/v5 — ce document tient lieu d'état réel).
 
 ---
