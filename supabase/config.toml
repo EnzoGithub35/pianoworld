@@ -1,0 +1,36 @@
+# Supabase CLI config for local E2E testing.
+# Sprint 11 — Playwright E2E.
+#
+# Usage : `supabase start` boots Postgres+GoTrue+PostgREST+Studio sur Docker.
+# Le schema applique-toi via scripts/setup-e2e-db.ps1 (psql -f schema.sql + seed.sql).
+
+project_id = "pianoworld-e2e"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost:54321"
+
+[auth]
+enabled = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/auth/login", "http://localhost:5173/auth/reset"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false  # E2E : on bypass la confirmation mail pour tester signup -> login.
