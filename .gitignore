@@ -31,3 +31,8 @@ supabase/.temp
 # PWA generated
 dev-dist
 coverage/
+
+# Playwright E2E (Sprint 11)
+playwright-report/
+test-results/
+.playwright-cache/

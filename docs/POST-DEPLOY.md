@@ -194,3 +194,59 @@ Ces branches sont toutes mergées via squash sur main (ou superseded par Sprint 
 - Repo nettoyé (11 branches feat/audit + 1 chore + 1 fix supprimées)
 - Toast reconnexion : plus de splash silencieux
 - JSDoc datés cleanup
+
+---
+
+## 🧪 Sprint 11 — Playwright E2E (livré)
+
+Sprint 11 livre le harnais E2E + 5 golden paths Playwright + workflow CI nightly. Toutes les specs tournent contre une **Supabase locale Docker** (zéro coût, zéro pollution de prod).
+
+### Aucune action Supabase post-merge
+
+Sprint 11 ne touche pas `schema.sql` ni les Edge Functions → **rien à déployer côté Supabase prod**.
+
+### Pour lancer les tests E2E en local (optionnel)
+
+```powershell
+# 1. Prérequis
+# - Docker Desktop running
+# - scoop install supabase (ou npm i -g supabase)
+# - psql dans le PATH
+
+# 2. Installer Playwright browsers
+npx playwright install chromium
+
+# 3. Boot stack local + apply schema + seed
+npm run test:e2e:setup
+
+# 4. Lancer les tests
+npm run test:e2e          # headless
+npm run test:e2e:ui       # UI interactif (debug)
+```
+
+Détail complet dans [e2e/README.md](../e2e/README.md).
+
+### Lancer manuellement le workflow CI
+
+GitHub UI → Actions → "E2E Playwright" → Run workflow. Ou :
+
+```bash
+gh workflow run "E2E Playwright"
+```
+
+Le workflow tourne aussi automatiquement chaque nuit à **03:30 UTC**. En cas de fail, le trace artifact est uploadé (téléchargeable depuis l'onglet Actions).
+
+### Limitations connues (documenté)
+
+- Email confirmation **désactivée** dans `supabase/config.toml` (`enable_confirmations = false`) pour tester signup → login direct
+- Photon/Nominatim **mockés** via `page.route(...)` pour éviter les rate-limits en CI
+- Notifications mail/push **non couvertes** par les E2E (couvert par pgTAP + tests unitaires)
+- Friend rate-limit (20/24h) → reset DB entre 2 runs si nécessaire
+
+### Bilan Sprint 11
+
+- 5 golden paths : signup, ajout piano, MAJ piano, suppression compte, friend workflow
+- 1 workflow CI nightly (zero coût additionnel — 25 min max par run)
+- Setup local 1-command (`npm run test:e2e:setup`)
+- Trace + video + screenshot conservés en cas d'échec
+- Documentation complète ([e2e/README.md](../e2e/README.md))

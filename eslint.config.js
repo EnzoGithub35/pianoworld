@@ -26,7 +26,10 @@ export default tseslint.config(
       'tailwind.config.js',
       'postcss.config.js',
       'vite.config.ts',
-      'vitest.config.ts'
+      'vitest.config.ts',
+      'playwright.config.ts',
+      'playwright-report/**',
+      'test-results/**'
     ]
   },
   js.configs.recommended,
@@ -78,7 +81,7 @@ export default tseslint.config(
     rules: { 'no-console': 'off' }
   },
   {
-    files: ['**/*.{test,spec}.{ts,tsx}', 'src/test/**'],
+    files: ['**/*.{test,spec}.{ts,tsx}', 'src/test/**', 'e2e/**'],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',
       'no-console': 'off'
