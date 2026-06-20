@@ -13,7 +13,7 @@ import { REQUESTS_LAST_SEEN_KEY } from '@/lib/constants'
 
 /**
  * Hub utilisateur. 4 onglets (post audit Sprint 3 fusion) :
- *  - Activité : stats + toggle interne Récent / Communauté (fusion v3)
+ *  - Activité : stats + toggle interne Récent / Communauté (fusion Sprint 3)
  *  - Évènements (admin-only en l'absence d'event) : liste des events
  *  - Favoris (v7) : pianos marqués favoris
  *  - Support : feedback user / réponses admin (avec Badge nouvelle réponse)

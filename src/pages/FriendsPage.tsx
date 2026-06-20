@@ -5,8 +5,8 @@ import { FriendsTab } from '@/components/Friends/FriendsTab'
 /**
  * v7 — Page standalone /friends accessible depuis la NavBar (5e icône).
  *
- * Réutilise le composant FriendsTab existant (livré en PR-B v6) — il gère
- * déjà les 3 sub-tabs (Mes amis / Reçues / Envoyées) avec son propre layout.
+ * Réutilise le composant FriendsTab existant (livré en v6 — système d'amitié)
+ * qui gère déjà les 3 sub-tabs (Mes amis / Reçues / Envoyées) avec son propre layout.
  *
  * Sprint 6 — back-button explicite (cohérence avec PianoPage/UserPage/Legal).
  * Fallback `/dashboard` si on est arrivé en deep-link direct (history vide).
