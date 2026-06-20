@@ -2596,7 +2596,10 @@ begin
       'update_id', new.id,
       'updater_user_id', new.updated_by,
       'updater_pseudo', upd.pseudo,
-      'quality', new.quality,
+      -- piano_updates n'a pas de colonne `quality` ; la colonne est `new_quality`
+      -- (cf. CREATE TABLE section 2). Bug détecté par pgTAP test 04 — pre-Sprint 9
+      -- silencieux car aucun INSERT user n'avait jamais touché ce path.
+      'quality', new.new_quality,
       'still_there', new.still_there
     )
   from public.piano_favorites pf
@@ -2933,7 +2936,10 @@ as $$
     p.lat,
     p.lng,
     pf.created_at as favorited_at,
-    (select max(pu.updated_at) from public.piano_updates pu where pu.piano_id = pf.piano_id) as last_update_at
+    -- piano_updates n'a pas de colonne `updated_at` ; le timestamp natif est
+    -- `created_at` (chaque update = nouvelle row immuable). Le bug était présent
+    -- depuis v7 PR-A (silencieux côté frontend qui ignorait le NULL retourné).
+    (select max(pu.created_at) from public.piano_updates pu where pu.piano_id = pf.piano_id) as last_update_at
   from public.piano_favorites pf
   join public.pianos p on p.id = pf.piano_id
   where pf.user_id = auth.uid()
