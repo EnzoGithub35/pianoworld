@@ -68,8 +68,7 @@ export function CookieBanner() {
       role="dialog"
       aria-live="polite"
       aria-label="Information cookies"
-      className="animate-slide-up-modal fixed inset-x-0 bottom-0 z-[1200] px-3 pb-3"
-      style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom))' }}
+      className="animate-slide-up-modal fixed inset-x-0 bottom-0 z-[1200] px-3 pb-safe-banner-bottom"
     >
       <div className="mx-auto flex max-w-2xl items-start gap-3 rounded-2xl border border-border bg-popover/95 p-4 shadow-2xl backdrop-blur">
         <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">

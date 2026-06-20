@@ -100,8 +100,7 @@ export function Dialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="animate-slide-up-modal sm:animate-scale-in relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-5 shadow-2xl sm:rounded-2xl"
-        style={{ paddingBottom: 'calc(1.25rem + env(safe-area-inset-bottom))' }}
+        className="animate-slide-up-modal sm:animate-scale-in relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-5 pb-safe-dialog-bottom shadow-2xl sm:rounded-2xl"
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 id={titleId} className="text-base font-semibold">

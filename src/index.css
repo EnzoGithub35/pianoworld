@@ -273,6 +273,113 @@
   z-index: -1;
 }
 
+/* ===========================================================
+   Sprint 12 A.5 CSP — Avatar HSL hash bucketé en 12 hues + 6 QualityBadge
+   classes. But : éliminer les inline styles `style={{ backgroundImage: ... }}`
+   pour pouvoir retirer `'unsafe-inline'` du CSP style-src.
+
+   Avatar : 12 hues (toutes les 30°). Le hash FNV-1a est bucketé via Math.floor
+   de hueFromPseudo dans src/components/ui/Avatar.tsx.
+   =========================================================== */
+@layer utilities {
+  /* Avatar — gradient diagonal 135deg avec 2 stops HSL */
+  .avatar-h0 {
+    background-image: linear-gradient(135deg, hsl(0 60% 42%), hsl(30 60% 32%));
+  }
+  .avatar-h30 {
+    background-image: linear-gradient(135deg, hsl(30 60% 42%), hsl(60 60% 32%));
+  }
+  .avatar-h60 {
+    background-image: linear-gradient(135deg, hsl(60 60% 42%), hsl(90 60% 32%));
+  }
+  .avatar-h90 {
+    background-image: linear-gradient(135deg, hsl(90 60% 42%), hsl(120 60% 32%));
+  }
+  .avatar-h120 {
+    background-image: linear-gradient(135deg, hsl(120 60% 42%), hsl(150 60% 32%));
+  }
+  .avatar-h150 {
+    background-image: linear-gradient(135deg, hsl(150 60% 42%), hsl(180 60% 32%));
+  }
+  .avatar-h180 {
+    background-image: linear-gradient(135deg, hsl(180 60% 42%), hsl(210 60% 32%));
+  }
+  .avatar-h210 {
+    background-image: linear-gradient(135deg, hsl(210 60% 42%), hsl(240 60% 32%));
+  }
+  .avatar-h240 {
+    background-image: linear-gradient(135deg, hsl(240 60% 42%), hsl(270 60% 32%));
+  }
+  .avatar-h270 {
+    background-image: linear-gradient(135deg, hsl(270 60% 42%), hsl(300 60% 32%));
+  }
+  .avatar-h300 {
+    background-image: linear-gradient(135deg, hsl(300 60% 42%), hsl(330 60% 32%));
+  }
+  .avatar-h330 {
+    background-image: linear-gradient(135deg, hsl(330 60% 42%), hsl(0 60% 32%));
+  }
+
+  /* QualityBadge — 6 enum values. Couleurs miroir de QUALITY_COLORS / QUALITY_TEXT_COLORS
+     dans src/types/database.ts. Contrast WCAG AA validé. */
+  .quality-neuf {
+    background-color: #16a34a;
+    color: #1c1917;
+  }
+  .quality-bon_etat {
+    background-color: #84cc16;
+    color: #1c1917;
+  }
+  .quality-potable {
+    background-color: #ca8a04;
+    color: #1c1917;
+  }
+  .quality-desaccorde {
+    background-color: #ea580c;
+    color: #1c1917;
+  }
+  .quality-desastreux {
+    background-color: #b91c1c;
+    color: #ffffff;
+  }
+  .quality-autre {
+    background-color: #78716c;
+    color: #ffffff;
+  }
+
+  /* PianoMarker (Leaflet divIcon) — CSP n'autorise pas style="..." inline.
+     On définit --pm (piano marker color) par classe parent + on l'applique
+     via stylesheet aux enfants `.pm-*`. */
+  .pm-neuf {
+    --pm: #16a34a;
+  }
+  .pm-bon_etat {
+    --pm: #84cc16;
+  }
+  .pm-potable {
+    --pm: #ca8a04;
+  }
+  .pm-desaccorde {
+    --pm: #ea580c;
+  }
+  .pm-desastreux {
+    --pm: #b91c1c;
+  }
+  .pm-autre {
+    --pm: #78716c;
+  }
+
+  .pm-border {
+    border-color: var(--pm);
+  }
+  .pm-icon {
+    color: var(--pm);
+  }
+  .pm-tri {
+    border-top-color: var(--pm);
+  }
+}
+
 /* Respecte prefers-reduced-motion : désactive toutes les animations non-essentielles
    (WCAG 2.3.3 — Animation from Interactions Level AAA). */
 @media (prefers-reduced-motion: reduce) {

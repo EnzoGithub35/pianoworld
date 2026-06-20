@@ -1,5 +1,5 @@
 import L from 'leaflet'
-import { QUALITY_COLORS, type PianoQuality } from '@/types/database'
+import { type PianoQuality } from '@/types/database'
 
 function escapeAttr(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')
@@ -7,7 +7,8 @@ function escapeAttr(value: string): string {
 
 /**
  * Icône piano SVG inline : 3 touches blanches + 2 noires, lisible jusqu'au zoom
- * du marker (32x32). Le `currentColor` permet d'hériter la teinte du parent.
+ * du marker (32x32). Le `currentColor` permet d'hériter la teinte du parent
+ * `.pm-icon` (CSS color: var(--pm)).
  */
 const PIANO_KEYS_SVG = `
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" class="h-4 w-4">
@@ -24,6 +25,11 @@ const PIANO_KEYS_SVG = `
  * - Si photo : carré 40x40 photo avec bordure colorée selon qualité
  * - Sinon    : carré 40x40 fond crème + icône piano teintée par la qualité
  * Une petite "queue" en bas du marker (triangle) donne le sens "ancré sur le sol".
+ *
+ * Sprint 12 A.5 CSP — Les couleurs dynamiques sont appliquées via la classe
+ * `.pm-<quality>` qui définit `--pm` (custom property), puis les enfants
+ * `.pm-border`, `.pm-icon`, `.pm-tri` utilisent `var(--pm)` via stylesheet.
+ * Plus de `style="..."` inline → compatible CSP `style-src 'self'`.
  */
 export function createPianoIcon({
   photoUrl,
@@ -35,22 +41,19 @@ export function createPianoIcon({
   /** Affiche un pulse autour du marker (cf. .pulse-ring dans index.css). */
   active?: boolean
 }): L.DivIcon {
-  const color = QUALITY_COLORS[quality]
   const inner = photoUrl
     ? `<img src="${escapeAttr(photoUrl)}" alt="piano" class="h-full w-full object-cover" loading="lazy" />`
-    : `<div class="flex h-full w-full items-center justify-center" style="color:${color}">${PIANO_KEYS_SVG}</div>`
+    : `<div class="pm-icon flex h-full w-full items-center justify-center">${PIANO_KEYS_SVG}</div>`
   const pulse = active ? '<div class="pulse-ring"></div>' : ''
   // Pas de transform CSS sur le wrapper : Leaflet positionne le DIV racine
-  // selon iconAnchor (cf. L.divIcon ci-dessous). Doubler avec un translate
-  // décalait visuellement le marker vers le haut, hors du point latlng réel.
+  // selon iconAnchor (cf. L.divIcon ci-dessous).
   const html = `
-    <div class="relative">
+    <div class="pm-${quality} relative">
       ${pulse}
-      <div class="h-10 w-10 overflow-hidden rounded-lg border-2 bg-white shadow-lg" style="border-color:${color}">
+      <div class="pm-border h-10 w-10 overflow-hidden rounded-lg border-2 bg-white shadow-lg">
         ${inner}
       </div>
-      <div class="absolute left-1/2 top-full -translate-x-1/2 -translate-y-[2px] h-0 w-0"
-           style="border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid ${color}"></div>
+      <div class="pm-tri absolute left-1/2 top-full h-0 w-0 -translate-x-1/2 -translate-y-[2px] border-l-[6px] border-r-[6px] border-t-[8px] border-l-transparent border-r-transparent"></div>
     </div>
   `
   return L.divIcon({

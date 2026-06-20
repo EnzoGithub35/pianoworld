@@ -64,8 +64,36 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out'
+      },
+      // Sprint 12 A.5 CSP — utilities pour éliminer style={{ paddingBottom: 'env(safe-area-inset-...)' }}
+      // sans recourir à 'unsafe-inline' style-src. Compose comme `pb-safe-bottom`,
+      // `pt-safe-banner`, `bottom-safe`, etc.
+      padding: {
+        'safe-bottom': 'env(safe-area-inset-bottom)',
+        'safe-top': 'env(safe-area-inset-top)',
+        'safe-fab': 'calc(1rem + env(safe-area-inset-bottom))',
+        'safe-banner-bottom': 'calc(0.75rem + env(safe-area-inset-bottom))',
+        'safe-banner-top': 'calc(0.5rem + env(safe-area-inset-top))',
+        'safe-dialog-bottom': 'calc(1.25rem + env(safe-area-inset-bottom))',
+        'safe-tutorial-bottom': 'calc(1.5rem + env(safe-area-inset-bottom))',
+        'safe-form-top': 'calc(0.75rem + env(safe-area-inset-top))'
+      },
+      inset: {
+        'safe-fab': 'calc(1rem + env(safe-area-inset-bottom))'
       }
     }
   },
-  plugins: [require('tailwindcss-animate')]
+  plugins: [require('tailwindcss-animate')],
+  // Safelist : préserve les 12 classes Avatar HSL bucket + 6 classes QualityBadge
+  // générées dynamiquement (sinon Tailwind les tree-shake car non détectées
+  // dans le source statique). Voir src/index.css @layer utilities.
+  safelist: [
+    'avatar-h0', 'avatar-h30', 'avatar-h60', 'avatar-h90',
+    'avatar-h120', 'avatar-h150', 'avatar-h180', 'avatar-h210',
+    'avatar-h240', 'avatar-h270', 'avatar-h300', 'avatar-h330',
+    'quality-neuf', 'quality-bon_etat', 'quality-potable',
+    'quality-desaccorde', 'quality-desastreux', 'quality-autre',
+    'pm-neuf', 'pm-bon_etat', 'pm-potable',
+    'pm-desaccorde', 'pm-desastreux', 'pm-autre'
+  ]
 }

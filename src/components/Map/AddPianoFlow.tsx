@@ -259,10 +259,7 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
 
   return (
     <div className="animate-slide-up-modal fixed inset-0 z-[1000] flex flex-col bg-background">
-      <header
-        className="flex items-center justify-between border-b border-border px-4 py-3"
-        style={{ paddingTop: 'calc(0.75rem + env(safe-area-inset-top))' }}
-      >
+      <header className="flex items-center justify-between border-b border-border px-4 pb-3 pt-safe-form-top">
         <h2 className="text-lg font-semibold">Ajouter un piano</h2>
         <button
           onClick={requestClose}
@@ -477,10 +474,7 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      <footer
-        className="border-t border-border bg-background p-4"
-        style={{ paddingBottom: 'calc(1rem + env(safe-area-inset-bottom))' }}
-      >
+      <footer className="border-t border-border bg-background p-4 pb-safe-fab">
         <Button onClick={handleSubmit} loading={submitting} className="w-full">
           Ajouter ce piano
         </Button>

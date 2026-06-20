@@ -18,10 +18,7 @@ export function NavBar() {
   // Badge "demandes amitié en attente" affiché sur l'item Amis.
   const pendingFriends = usePendingReceivedCount()
   return (
-    <nav
-      className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 backdrop-blur-md supports-[backdrop-filter]:bg-background/80"
-      style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-    >
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 pb-safe-bottom backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex h-16 max-w-md items-stretch">
         {items.map(({ to, icon: Icon, label, end }) => (
           <NavLink
