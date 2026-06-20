@@ -2596,7 +2596,10 @@ begin
       'update_id', new.id,
       'updater_user_id', new.updated_by,
       'updater_pseudo', upd.pseudo,
-      'quality', new.quality,
+      -- piano_updates n'a pas de colonne `quality` ; la colonne est `new_quality`
+      -- (cf. CREATE TABLE section 2). Bug détecté par pgTAP test 04 — pre-Sprint 9
+      -- silencieux car aucun INSERT user n'avait jamais touché ce path.
+      'quality', new.new_quality,
       'still_there', new.still_there
     )
   from public.piano_favorites pf

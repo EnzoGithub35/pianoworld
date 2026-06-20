@@ -472,7 +472,29 @@ Important pour le free tier Sentry : si on leak des emails users vers Sentry, c'
 - ✅ **A.7 EXIF strip upload** : `compressPhoto` re-encode l'image en JPEG via canvas avec `preserveExif: false` explicite ([src/lib/photo.ts](../src/lib/photo.ts)). Le re-encode élimine GPS/device/IPTC/XMP. Test régression dans [photo.test.ts](../src/lib/__tests__/photo.test.ts) vérifie que la lib est bien appelée avec le flag.
 - ✅ **A.6.4 rate-limit signup par IP** : Edge Function [`signup-protected`](../supabase/functions/signup-protected/index.ts) hash l'IP (SHA-256 + sel env) → RPC `check_signup_ip_allowed` (advisory lock atomic count+insert) → 5 tentatives / 24h. Fail-open si Edge Function indispo (Supabase Auth rate-limit reste actif). Frontend câblé dans `AuthContext.signUp`. Purge nightly pg_cron documentée.
 
-### Backlog (P1/P2/P3)
+### Sprint 9 — B.4 pgTAP RLS tests (livré)
+
+- ✅ **B.4 Tests pgTAP RLS** : 88 assertions sur 7 fichiers dans [supabase/tests/](../supabase/tests/). Couvre :
+  - Tables `REVOKE ALL` (friendships, friendship_rejections, friend_arriving_dedup, rate_limit_buckets, signup_ip_attempts, audit_log)
+  - Column-level grants `profiles` (role/banned_at/first_name/last_name invisibles)
+  - Visibility RLS `piano_sessions` (public vs friends)
+  - Self-only `piano_favorites` + idempotency `toggle_piano_favorite`
+  - Guards RPCs admin (`set_user_role` superadmin, `set_user_banned` + password, `force_delete_piano`, `delete_my_account`)
+  - Friend workflow complet (send/accept/reject/cancel/remove + cooldown 30j ghost-reject)
+  - Rate-limits anti-énumération (`find_user_by_email` 5/24h, `check_signup_ip_allowed` service_role only)
+- **Bugs trouvés** : 2 régressions silencieuses (cf. ci-dessous).
+- **Runner** : `./scripts/run-pgtap.ps1` (PowerShell, exécute tous les tests contre la DB linkée Supabase, parse plan vs ok N).
+
+### Bugs SQL trouvés et fixés via pgTAP
+
+| Bug                                                                                                                   | Détection                                                                             | Fix                                                                                              |
+| --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `get_my_favorites.last_update_at` référence `pu.updated_at` (n'existe pas, c'est `created_at`)                        | Détecté à l'exécution Supabase SQL Editor lors du déploiement Sprint 7 sécu           | `fix(v7): get_my_favorites colonne pu.updated_at -> pu.created_at` (cherry-picked dans Sprint 9) |
+| `queue_favorite_update_notification` référence `new.quality` (n'existe pas dans `piano_updates`, c'est `new_quality`) | Détecté par Sprint 9 pgTAP test 04 lors du 1er INSERT `piano_updates` avec favoriters | Inclus dans Sprint 9 — référence `new.new_quality`                                               |
+
+Ces 2 bugs étaient silencieux en prod car aucun flow utilisateur ne les avait jamais déclenchés. Les tests pgTAP valident désormais le comportement réel des policies + RPCs.
+
+### Backlog (P1/P3)
 
 - **A.1.2 chiffrement `push_subscriptions`** (P3) : `p256dh`/`auth_secret` stockées en clair. Vault Supabase nécessaire (pas dispo free tier).
 - **A.5 CSP nonces** (P1, Large) : retirer `'unsafe-inline'` du `script-src` + `style-src`. **Scope précis :**
@@ -480,7 +502,6 @@ Important pour le free tier Sentry : si on leak des emails users vers Sentry, c'
   - **`script-src`** : Vite injecte des scripts inline au build (entry chunks) + Sentry init inline. Nonces générés par Vercel Edge middleware (au request time) injectés dans le HTML servi + dans le header CSP. Plugin Vite ou `vite-plugin-csp` pour injecter `nonce="__NONCE__"` au build, substitué par l'Edge middleware au runtime.
   - **Effort réel** : multi-jours (refactor 15 inline styles + Vercel middleware + tests Lighthouse + vérif Sentry).
 - **A.6.3 2FA TOTP admin** (P3) : Supabase MFA disponible mais non câblé pour admin uniquement.
-- **B.4 tests pgTAP RLS** (P2) : `supabase test db` pour valider les policies par INSERT/SELECT depuis différents rôles.
 
 ### Non couvert (out of scope)
 
