@@ -38,6 +38,16 @@ export const QUALITY_COLORS: Record<PianoQuality, string> = {
   autre: '#78716c'
 }
 
+/** Couleur de texte lisible (WCAG AA) posée sur QUALITY_COLORS : foncé sur les fonds clairs (lime/jaune/vert/orange), blanc sur les fonds sombres (rouge/gris). */
+export const QUALITY_TEXT_COLORS: Record<PianoQuality, string> = {
+  neuf: '#1c1917',
+  bon_etat: '#1c1917',
+  potable: '#1c1917',
+  desaccorde: '#1c1917',
+  desastreux: '#ffffff',
+  autre: '#ffffff'
+}
+
 export type UserRole = 'user' | 'admin' | 'superadmin'
 
 export type Profile = {

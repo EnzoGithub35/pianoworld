@@ -5,6 +5,7 @@ import {
   PIANO_QUALITIES,
   QUALITY_COLORS,
   QUALITY_LABELS,
+  QUALITY_TEXT_COLORS,
   type PianoQuality
 } from '@/types/database'
 
@@ -78,10 +79,17 @@ export function MapFilters({
                     className={cn(
                       'rounded-full border px-2 py-0.5 text-xs',
                       checked
-                        ? 'border-transparent text-white'
+                        ? 'border-transparent'
                         : 'border-border bg-background text-muted-foreground'
                     )}
-                    style={checked ? { backgroundColor: QUALITY_COLORS[q] } : undefined}
+                    style={
+                      checked
+                        ? {
+                            backgroundColor: QUALITY_COLORS[q],
+                            color: QUALITY_TEXT_COLORS[q]
+                          }
+                        : undefined
+                    }
                   >
                     {QUALITY_LABELS[q]}
                   </button>

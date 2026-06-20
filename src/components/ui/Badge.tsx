@@ -6,13 +6,19 @@ import { cn } from '@/lib/utils'
  * Variants alignés avec les couleurs sémantiques du design system.
  */
 
-type BadgeVariant = 'default' | 'primary' | 'success' | 'warning' | 'destructive' | 'outline'
+type BadgeVariant =
+  | 'default'
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'destructive'
+  | 'outline'
 
 const VARIANT_CLASSES: Record<BadgeVariant, string> = {
   default: 'bg-muted text-muted-foreground',
   primary: 'bg-primary text-primary-foreground',
   success: 'bg-green-600 text-white dark:bg-green-500 dark:text-green-950',
-  warning: 'bg-amber-500 text-white',
+  warning: 'bg-amber-500 text-amber-950',
   destructive: 'bg-destructive text-destructive-foreground',
   outline: 'border border-border text-foreground'
 }

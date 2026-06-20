@@ -89,16 +89,17 @@ Le frontend mirror ces valeurs dans [src/lib/constants.ts](../src/lib/constants.
 
 Postgres transactional advisory locks sérialisent des opérations logiquement liées sans verrouiller des rows que l'app ne possède pas. La convention de keying est `hashtext('<scope>:<id>')` pour partitionner l'espace de lock par use case.
 
-| Site                         | Ligne | Key                          | Pourquoi                                                                                                   |
-| ---------------------------- | ----: | ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------- |
-| `enforce_rate_limit`         |  1124 | `(uid, action)`              | Empêche deux INSERTs concurrents d'observer `count = max-1` tous les deux                                  |
-| `enforce_caller_rate_limit`  |  2628 | `(uid, action)`              | Même garantie pour RPC bodies (`find_user_by_email`)                                                       |
-| `send_friend_request`        |  2111 | `(low, high)` canonical pair | Anti-race pour requests croisés simultanés — garantit que la branche auto-accept voit un état déterministe |
-| `accept_friend_request`      |  2180 | `('fr:'                      |                                                                                                            | request_id)` | Idempotency : deux clicks tombent sur le même lock, le 2e voit `status=accepted` et returns |
-| `reject_friend_request`      |  2229 | `('fr:'                      |                                                                                                            | request_id)` | Même contrat idempotency                                                                    |
-| `cancel_friend_request`      |  2262 | `('fr:'                      |                                                                                                            | request_id)` | Même                                                                                        |
-| `remove_friendship`          |  2296 | `(low, high)`                | Symétrique avec send (même key shape) → send + remove concurrents sérialisent                              |
-| `toggle_piano_favorite` (v7) |  2865 | `(uid, 'fav', piano_id)`     | Double-click resilience : le 2e call observe le nouveau state                                              |
+| Site                              | Ligne | Key                                  | Pourquoi                                                                                                   |
+| --------------------------------- | ----: | ------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| `enforce_rate_limit`              |  1098 | `(uid, action)`                      | Empêche deux INSERTs concurrents d'observer `count = max-1` tous les deux                                  |
+| `enforce_caller_rate_limit`       |  2627 | `(uid, action)`                      | Même garantie pour RPC bodies (`find_user_by_email`)                                                       |
+| `send_friend_request`             |  2094 | `(low, high)` canonical pair         | Anti-race pour requests croisés simultanés — garantit que la branche auto-accept voit un état déterministe |
+| `accept_friend_request`           |  2182 | `('fr:' \|\| request_id)`            | Idempotency : deux clicks tombent sur le même lock, le 2e voit `status=accepted` et returns                |
+| `reject_friend_request`           |  2232 | `('fr:' \|\| request_id)`            | Même contrat idempotency                                                                                   |
+| `cancel_friend_request`           |  2265 | `('fr:' \|\| request_id)`            | Même                                                                                                       |
+| `remove_friendship`               |  2293 | `(low, high)`                        | Symétrique avec send (même key shape) → send + remove concurrents sérialisent                              |
+| `toggle_piano_favorite` (v7)      |  2868 | `(uid, 'fav', piano_id)`             | Double-click resilience : le 2e call observe le nouveau state                                              |
+| `check_signup_ip_allowed` (v7-S7) |  3061 | `('signup-ip', hashtext(p_ip_hash))` | Atomic count+insert : empêche 2 signups simultanés depuis la même IP de passer sous le quota 5/24h         |
 
 Tous les locks sont `pg_advisory_xact_lock` (transactional) → released automatiquement à COMMIT/ROLLBACK, ne peuvent pas leaker.
 
@@ -493,6 +494,14 @@ Important pour le free tier Sentry : si on leak des emails users vers Sentry, c'
 | `queue_favorite_update_notification` référence `new.quality` (n'existe pas dans `piano_updates`, c'est `new_quality`) | Détecté par Sprint 9 pgTAP test 04 lors du 1er INSERT `piano_updates` avec favoriters | Inclus dans Sprint 9 — référence `new.new_quality`                                               |
 
 Ces 2 bugs étaient silencieux en prod car aucun flow utilisateur ne les avait jamais déclenchés. Les tests pgTAP valident désormais le comportement réel des policies + RPCs.
+
+### Sprint 11 — B.5 Playwright E2E (livré)
+
+- ✅ **B.5 Playwright E2E** : 5 golden paths dans [e2e/golden/](../e2e/golden/) — signup + add-piano + update-piano + delete-account + friend-workflow. Couvre les flows critiques bout-en-bout (UI + RPC + DB) contre une Supabase locale Docker.
+- **Stack** : Playwright 1.61 + Chromium headless + `@playwright/test`. Mocks Photon/Nominatim via `page.route(...)` pour tests offline-safe.
+- **Supabase local** : [supabase/config.toml](../supabase/config.toml) avec `enable_confirmations = false` (bypass mail). Setup via [scripts/setup-e2e-db.ps1](../scripts/setup-e2e-db.ps1) : `supabase start` + apply schema + seed alice/bob/piano fixture.
+- **CI** : [.github/workflows/e2e.yml](../.github/workflows/e2e.yml) — `workflow_dispatch` (manual) + cron nightly `30 3 * * *`. **PAS PR-gated** pour garder le check PR rapide. Trace artifact uploadé en cas de fail (rétention 7j).
+- **Scripts npm** : `test:e2e`, `test:e2e:ui`, `test:e2e:setup`.
 
 ### Backlog (P1/P3)
 

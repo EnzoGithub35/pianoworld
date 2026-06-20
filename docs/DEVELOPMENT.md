@@ -155,20 +155,23 @@ where id = (select id from auth.users where email = '<your-email>');
 
 [package.json:6-19](../package.json#L6-L19)
 
-| Script          | Commande                                                                                      | Usage                              |
-| --------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
-| `dev`           | `vite`                                                                                        | Dev server port 5173, HMR          |
-| `build`         | `tsc -b && vite build`                                                                        | Production build avec PWA          |
-| `preview`       | `vite preview`                                                                                | Serve `dist/` pour test prod local |
-| `typecheck`     | `tsc -b --noEmit`                                                                             | TypeScript check sans build        |
-| `lint`          | `eslint .`                                                                                    | Lint repo entier                   |
-| `lint:fix`      | `eslint . --fix`                                                                              | Auto-fix lint issues               |
-| `format`        | `prettier --write "src/**/*.{ts,tsx,css,md,json}" "*.{md,json}" ".github/**/*.{yml,yaml,md}"` | Format all                         |
-| `format:check`  | `prettier --check ...`                                                                        | CI mode (no write)                 |
-| `test`          | `vitest run`                                                                                  | Run tests once (CI mode)           |
-| `test:watch`    | `vitest`                                                                                      | Watch mode interactif              |
-| `test:coverage` | `vitest run --coverage`                                                                       | Rapport coverage v8                |
-| `prepare`       | `husky`                                                                                       | Réinstalle hooks au `npm install`  |
+| Script           | Commande                                                                                      | Usage                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| `dev`            | `vite`                                                                                        | Dev server port 5173, HMR                               |
+| `build`          | `tsc -b && vite build`                                                                        | Production build avec PWA                               |
+| `preview`        | `vite preview`                                                                                | Serve `dist/` pour test prod local                      |
+| `typecheck`      | `tsc -b --noEmit`                                                                             | TypeScript check sans build                             |
+| `lint`           | `eslint .`                                                                                    | Lint repo entier                                        |
+| `lint:fix`       | `eslint . --fix`                                                                              | Auto-fix lint issues                                    |
+| `format`         | `prettier --write "src/**/*.{ts,tsx,css,md,json}" "*.{md,json}" ".github/**/*.{yml,yaml,md}"` | Format all                                              |
+| `format:check`   | `prettier --check ...`                                                                        | CI mode (no write)                                      |
+| `test`           | `vitest run`                                                                                  | Run unit tests (CI mode, 80 tests + snapshot RLS)       |
+| `test:watch`     | `vitest`                                                                                      | Watch mode interactif                                   |
+| `test:coverage`  | `vitest run --coverage`                                                                       | Rapport coverage v8 (seuil 65% sur src/lib/)            |
+| `test:e2e`       | `playwright test`                                                                             | **Sprint 11** — E2E golden paths headless               |
+| `test:e2e:ui`    | `playwright test --ui`                                                                        | **Sprint 11** — Playwright UI debug interactif          |
+| `test:e2e:setup` | `pwsh ./scripts/setup-e2e-db.ps1`                                                             | **Sprint 11** — Boot Supabase local + apply schema/seed |
+| `prepare`        | `husky`                                                                                       | Réinstalle hooks au `npm install`                       |
 
 ### Update snapshots après modif schema.sql
 
@@ -177,6 +180,79 @@ npm test -- -u
 # ou
 npx vitest run --update
 ```
+
+### Supabase Local + E2E Testing (Sprint 11)
+
+Pour lancer les tests E2E Playwright contre une Supabase Docker isolée :
+
+**Prérequis** :
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) running
+- Supabase CLI : `scoop install supabase` (Windows) ou `npm i -g supabase`
+- `psql` dans le PATH (`scoop install postgresql` Windows)
+- Node 20+
+
+**Bootstrap (1 commande)** :
+
+```powershell
+npm run test:e2e:setup
+```
+
+Le script [scripts/setup-e2e-db.ps1](../scripts/setup-e2e-db.ps1) :
+
+1. `supabase start` (boot Postgres + GoTrue + PostgREST + Studio sur Docker, ports 54321-54323)
+2. `psql -f supabase/schema.sql` (apply schema 3173 lignes)
+3. `psql -f e2e/fixtures/seed.sql` (crée alice, bob, 1 piano fixture Rennes)
+4. Vérifie que les 2 profiles fixtures existent
+
+**Config** : [supabase/config.toml](../supabase/config.toml) avec `[auth.email] enable_confirmations = false` (bypass confirmation mail en test).
+
+**Lancer les tests** :
+
+```powershell
+npm run test:e2e          # headless Chromium
+npm run test:e2e:ui       # debug interactif
+```
+
+**Reset DB entre runs** (si les tests ont créé du state) :
+
+```powershell
+supabase db reset --linked=false; npm run test:e2e:setup
+```
+
+Détail complet dans [e2e/README.md](../e2e/README.md). Stratégie globale (3 tiers) dans [docs/TESTING.md](TESTING.md).
+
+### pgTAP RLS Tests (Sprint 9)
+
+Tests SQL au comportement réel des policies RLS + RPCs. 88 assertions, 7 fichiers dans [supabase/tests/](../supabase/tests/).
+
+**Prérequis** :
+
+- Supabase CLI installé et liée à un projet (`supabase link`)
+- Extension pgTAP activée sur la DB (`create extension if not exists pgtap;` — déjà dans `_setup.sql`)
+- Helpers `pgtap_helpers` schema chargés (le script s'en occupe)
+
+**Run** :
+
+```powershell
+./scripts/run-pgtap.ps1
+```
+
+Le runner :
+
+- Détecte Supabase CLI (PATH ou `$env:USERPROFILE\scoop\shims\supabase.exe`)
+- Boucle sur `supabase/tests/0*.sql`
+- `supabase db query --file <test.sql> --linked` pour chaque
+- Parse plan vs ok N, agrège pass/fail
+- Exit 1 si un test échoue
+
+**Quand exécuter** :
+
+- Après chaque modif de `schema.sql` touchant policies / RPCs / grants
+- En complément du snapshot RLS Vitest (qui fige le texte SQL ; pgTAP valide le comportement)
+- **PAS PR-gated**, **PAS pre-commit** (manuel ou nightly)
+
+Voir [supabase/tests/README.md](../supabase/tests/README.md) pour les patterns. Stratégie complète dans [docs/TESTING.md](TESTING.md).
 
 ---
 
@@ -582,10 +658,6 @@ Ne fonctionnent qu'avec **PWA installée** ("Ajouter à l'écran d'accueil"), pa
 ### Snapshot RLS différe après pull
 
 → Quelqu'un a modifié `schema.sql` sans regen snapshot. `npm test -- -u` après revue du diff.
-
-### `notify_favorite_update` notifs envoyées mais pas de toggle UI
-
-→ Transitional state v7 PR-A. PR-B v7 ajoutera l'entry dans `NOTIFICATION_CATEGORIES`. Voir [NOTIFICATIONS.md §6](NOTIFICATIONS.md#6-préférences-user--9-toggles).
 
 ### Commit refusé par commitlint
 

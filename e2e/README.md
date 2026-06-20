@@ -26,6 +26,7 @@ e2e/
 - **Docker Desktop** running (Supabase local utilise Docker)
 - **Supabase CLI** : `scoop install supabase` (Windows) ou `npm i -g supabase`
 - **psql** dans le PATH (vient avec Postgres ou via `scoop install postgresql`)
+- **Node.js 20+** : requis (vérifier via `node --version`)
 
 ### 2. Installer Playwright + browsers
 
@@ -70,6 +71,8 @@ npm run test:e2e:ui
 
 Ouvre le Playwright UI : sélection des specs, time-travel debugging, watch mode.
 
+> 💡 **Auto-start dev server** : en local Playwright démarre automatiquement `npm run dev` ([playwright.config.ts:21-30](../playwright.config.ts#L21-L30)) avant les tests. Set `E2E_NO_WEBSERVER=1` pour désactiver et tester contre un serveur déjà running.
+
 ### Spec unique
 
 ```powershell
@@ -81,8 +84,11 @@ npx playwright test e2e/golden/01-signup.spec.ts
 Si les tests ont modifié l'état (piano créés, demandes d'amitié) :
 
 ```powershell
-supabase db reset; npm run test:e2e:setup
+supabase db reset --linked=false
+npm run test:e2e:setup
 ```
+
+(ou plus simplement `npm run test:e2e:setup` qui inclut le reset)
 
 ## Limitations connues
 

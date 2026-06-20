@@ -7,10 +7,10 @@ Pourquoi : minimum d'overhead pour un dev solo, mais discipline pro : chaque cha
 
 ## Branches
 
-| Nom | Rôle | Protection | Déploiement Vercel |
-|---|---|---|---|
-| `main` | Production, toujours déployable | ✅ activée (cf. ci-dessous) | **Auto-deploy prod** sur push |
-| `<type>/<slug>` | Travail en cours | ❌ | **Preview deploy** automatique sur push |
+| Nom             | Rôle                            | Protection                  | Déploiement Vercel                      |
+| --------------- | ------------------------------- | --------------------------- | --------------------------------------- |
+| `main`          | Production, toujours déployable | ✅ activée (cf. ci-dessous) | **Auto-deploy prod** sur push           |
+| `<type>/<slug>` | Travail en cours                | ❌                          | **Preview deploy** automatique sur push |
 
 Pas de `develop`. Pas de `release`. Pas de `hotfix`. Tout passe par `main` via PR.
 
@@ -18,16 +18,16 @@ Pas de `develop`. Pas de `release`. Pas de `hotfix`. Tout passe par `main` via P
 
 `<type>/<short-slug>` — kebab-case, ≤ 50 caractères.
 
-| Type | Quand l'utiliser | Exemple |
-|---|---|---|
-| `feat/` | Nouvelle fonctionnalité user | `feat/calendar-shared-sessions` |
-| `fix/` | Correction de bug | `fix/cookie-banner-iphone-safari` |
-| `security/` | Durcissement / patch sécu | `security/rls-profiles-column-grants` |
-| `chore/` | Build, deps, refactor sans impact user | `chore/upgrade-tanstack-query` |
-| `docs/` | Documentation uniquement | `docs/branching-strategy` |
-| `test/` | Tests uniquement (ajout/refactor) | `test/playwright-signup-flow` |
-| `ci/` | Pipelines, hooks, tooling | `ci/coverage-threshold` |
-| `perf/` | Optimisation perf mesurée | `perf/leaflet-tile-cache` |
+| Type        | Quand l'utiliser                       | Exemple                               |
+| ----------- | -------------------------------------- | ------------------------------------- |
+| `feat/`     | Nouvelle fonctionnalité user           | `feat/calendar-shared-sessions`       |
+| `fix/`      | Correction de bug                      | `fix/cookie-banner-iphone-safari`     |
+| `security/` | Durcissement / patch sécu              | `security/rls-profiles-column-grants` |
+| `chore/`    | Build, deps, refactor sans impact user | `chore/upgrade-tanstack-query`        |
+| `docs/`     | Documentation uniquement               | `docs/branching-strategy`             |
+| `test/`     | Tests uniquement (ajout/refactor)      | `test/playwright-signup-flow`         |
+| `ci/`       | Pipelines, hooks, tooling              | `ci/coverage-threshold`               |
+| `perf/`     | Optimisation perf mesurée              | `perf/leaflet-tile-cache`             |
 
 **Règle d'or** : 1 branche = 1 PR = 1 thème. Si pendant le dev tu découvres autre chose, ouvre une autre branche.
 
@@ -51,11 +51,16 @@ git commit -m "feat(auth): require CGU acceptance on signup"
 git push -u origin feat/cgu-checkbox
 
 # 5. Ouvrir une PR vers main (GitHub UI ou gh CLI)
-#    → CI tourne automatiquement (typecheck + lint + tests + build)
+#    → CI tourne automatiquement (typecheck + lint + tests + build, ~3 min)
 #    → Vercel poste un Preview URL en commentaire
 #    → Tu vérifies le diff + tu testes l'URL preview sur mobile
+#
+#    Note: les E2E Playwright (Sprint 11) tournent en nightly cron ou manual
+#    dispatch (.github/workflows/e2e.yml), PAS sur les PRs (pour garder le
+#    check rapide). Lance localement si tu touches un golden path :
+#    `npm run test:e2e:setup && npm run test:e2e`
 
-# 6. Merge (squash) une fois CI verte
+# 6. Merge (default: Create a merge commit) une fois CI verte
 #    → Vercel auto-deploy main en prod
 #    → Supprimer la branche locale + remote
 git switch main
@@ -74,11 +79,14 @@ git push origin --delete feat/cgu-checkbox
 
 ### Squash, rebase, ou merge commit ?
 
-**Squash & merge** par défaut sur main. Raison : history linéaire, un commit par feature, facile à `git revert`.
+**Pratique actuelle** : `Create a merge commit` via GitHub UI (les PRs Sprints 6-11 utilisent toutes des merge commits — cf. `git log main --oneline`). Cela préserve l'identité du commit de la feature (`feat(sprint-X): ...`) tout en marquant le merge sur main avec un commit `Merge pull request #N from ...`.
 
-Exceptions :
-- Si la PR contient plusieurs commits volontairement atomiques (ex: 1 commit par étape de refactor), faire **Rebase & merge** pour préserver les commits.
-- **Jamais de merge commit** (`Create a merge commit`) — pollue l'history.
+Alternatives selon le contexte :
+
+- **Squash & merge** : pour une PR avec beaucoup de commits intermédiaires ("wip", "fix lint", etc.) qu'on veut aplatir. Plus rare en pratique.
+- **Rebase & merge** : pour préserver plusieurs commits atomiques (1 commit par étape de refactor) sans merge commit. Peu utilisé.
+
+Tous bloquent `git push --force sur main` (branch protection). Voir [POST-DEPLOY.md § Cleanup branches](docs/POST-DEPLOY.md) pour le nettoyage des branches squash/merge-ées.
 
 ---
 
@@ -87,12 +95,14 @@ Exceptions :
 Format imposé par commitlint au commit-msg hook.
 
 ```
-<type>(<scope>): <résumé impératif, minuscule, ≤ 72 chars>
+<type>(<scope>): <résumé impératif, minuscule, ≤ 100 chars>
 
 [corps optionnel : pourquoi, contexte, breaking changes]
 
 [footer optionnel : Closes #X, Co-authored-by, BREAKING CHANGE: …]
 ```
+
+> ⚠️ La limite `header-max-length: 100` est définie dans [commitlint.config.js](commitlint.config.js). Les acronymes en uppercase (`RGPD`, `CGU`, `RLS`, `RPC`, `CI`) cassent commitlint en milieu de sujet → écrire `rgpd`, `cgu`, `rls`, `rpc`, `ci` dans le subject. Le body peut être normal.
 
 ### Types autorisés
 
@@ -101,6 +111,8 @@ Format imposé par commitlint au commit-msg hook.
 ### Scopes recommandés (libres mais cohérents)
 
 `auth`, `map`, `piano`, `session`, `visit`, `event`, `admin`, `settings`, `notif`, `push`, `rls`, `db`, `lib`, `ui`, `legal`, `pwa`, `sentry`, `i18n`.
+
+**`sprint-<n>` ou `sprint-<n>-<topic>`** : utilisé pour les audits cross-cutting / refactors bulk (ex: `feat(sprint-11-e2e): ...`, `feat(sprint-9-pgtap): ...`, `feat(sprint-7-sec): ...`). Convention en active depuis les Sprints 6-11 (cf. [CLAUDE.md § Sprints récents](CLAUDE.md)).
 
 ### Exemples concrets
 
@@ -153,6 +165,7 @@ Une fois activé, **tu ne peux plus push directement sur main**. Tout passe par 
 SemVer : `v0.MINOR.PATCH` tant que < 1.0.
 
 Convention :
+
 - **MAJOR** (1.0.0) : sortie publique stable
 - **MINOR** : nouvelle feature (commits `feat`)
 - **PATCH** : bugfix, sécu, chore (commits `fix`, `security`, `chore`)

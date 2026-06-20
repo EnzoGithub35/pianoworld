@@ -48,13 +48,13 @@ export function Avatar({
     <span
       aria-hidden="true"
       className={cn(
-        'inline-flex flex-shrink-0 items-center justify-center rounded-full font-display font-bold text-white',
+        'font-display inline-flex flex-shrink-0 items-center justify-center rounded-full font-bold text-white',
         SIZE_CLASSES[size],
         ring && 'ring-2 ring-background',
         className
       )}
       style={{
-        backgroundImage: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${(hue + 30) % 360} 65% 40%))`
+        backgroundImage: `linear-gradient(135deg, hsl(${hue} 60% 42%), hsl(${(hue + 30) % 360} 60% 32%))`
       }}
     >
       {initial}
