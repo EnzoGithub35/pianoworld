@@ -128,3 +128,69 @@ C'est instantané, zero downtime. Les mails déjà en queue (`notifications_outb
 3. **Track D dette technique** (Quick wins ~30 min total) : PWA icons + Dependabot batch safe + cleanup branches stale.
 
 Quand tu auras décidé, on rebascule en plan mode pour designer le Sprint 9.
+
+---
+
+## 🧹 Sprint 10 — Actions user-side (hors-code)
+
+Sprint 10 a livré le code (Leaflet CSS chunk + JSDoc cleanup + reconnexion toast + audit CTAs). Reste 3 actions **à exécuter par toi** quand tu as 10 minutes :
+
+### 1. PWA PNG icons (~5 min)
+
+Sans ces icônes, iOS et Android utilisent une icône générique à l'install PWA.
+
+1. Va sur **https://realfavicongenerator.net**
+2. Upload `public/favicon.svg`
+3. Configure : Web App Manifest section → couleur background `#FAF7F0` (crème PianoWorld)
+4. Download le package
+5. Extrait et place dans `public/` :
+   - `pwa-192x192.png`
+   - `pwa-512x512.png`
+6. Commit + push
+
+### 2. Dependabot batch safe (~5 min)
+
+Va sur https://github.com/EnzoGithub35/pianoworld/pulls et merge en batch :
+
+**🟢 SAFE à merger** :
+
+- `dependabot/npm_and_yarn/minor-and-patch-*` (groupé minor + patch)
+- `dependabot/github_actions/actions/checkout-6`
+- `dependabot/github_actions/actions/setup-node-6`
+- `dependabot/npm_and_yarn/types/node-25.9.3`
+- `dependabot/npm_and_yarn/vite-plugin-pwa-1.3.0`
+
+**🔴 SKIP / attention** :
+
+- `dependabot/npm_and_yarn/vitest-4.1.8` (majeure → risque casser snapshot RLS, attendre un sprint dédié)
+- `dependabot/npm_and_yarn/lint-staged-17.0.7` (majeure → vérifier le changelog avant merge)
+
+### 3. Cleanup branches stale (~2 min)
+
+Après que Sprint 9 pgTAP soit mergé, exécute en local :
+
+```bash
+git push origin --delete \
+  feat/audit-sprint-1 \
+  feat/audit-sprint-2 \
+  feat/audit-sprint-3 \
+  feat/audit-sprint-4 \
+  feat/audit-sprint-5 \
+  feat/audit-sprint-6 \
+  feat/audit-sprint-7-sec \
+  feat/audit-sprint-8-wording \
+  feat/audit-sprint-9-pgtap \
+  chore/claude-skills \
+  fix/get-my-favorites-column
+```
+
+Ces branches sont toutes mergées via squash sur main (ou superseded par Sprint 9 dans le cas de `fix/get-my-favorites-column`). Le contenu est préservé dans l'historique main.
+
+### Bilan attendu post Sprint 10 + actions user-side
+
+- Bundle index gzip réduit (~6 KB éco Leaflet CSS)
+- Icônes PWA propres iOS/Android
+- 5 PRs Dependabot fermées (deps à jour)
+- Repo nettoyé (11 branches feat/audit + 1 chore + 1 fix supprimées)
+- Toast reconnexion : plus de splash silencieux
+- JSDoc datés cleanup

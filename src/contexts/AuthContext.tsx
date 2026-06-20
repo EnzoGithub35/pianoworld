@@ -61,12 +61,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true
 
     /**
+     * Sprint 10 — Reconnexion silencieuse : si l'init dure > 3s, on affiche
+     * un toast info "Reconnexion en cours…" pour expliquer la latence au
+     * lieu de laisser le user face à un splash blanc. Dismiss au resolve.
+     */
+    const reconnectingTimer = window.setTimeout(() => {
+      if (!mounted) return
+      toast.loading('Reconnexion en cours…', {
+        id: 'auth-reconnect',
+        duration: Infinity
+      })
+    }, 3000)
+
+    /**
      * Safety net : si getSession ou fetchProfile hang (réseau coupé, Supabase
      * en pause, etc.), on débloque l'UI au bout de 8s plutôt que d'avoir un
-     * splash infini. L'utilisateur arrive sur la page de login.
+     * splash infini. Toast d'erreur pour signaler la connexion lente.
      */
     const safetyTimer = window.setTimeout(() => {
       if (!mounted) return
+      toast.dismiss('auth-reconnect')
+      toast.error('Connexion lente. Vérifie ta connexion et réessaie.', {
+        id: 'auth-timeout',
+        duration: 6000
+      })
       logger.warn('auth.init', 'safety timeout fired, forcing loading=false')
       setLoading(false)
     }, 8000)
@@ -89,7 +107,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logger.error('auth.init', 'unexpected error', err)
       } finally {
         if (mounted) {
+          window.clearTimeout(reconnectingTimer)
           window.clearTimeout(safetyTimer)
+          toast.dismiss('auth-reconnect')
           setLoading(false)
         }
       }
@@ -114,7 +134,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false
+      window.clearTimeout(reconnectingTimer)
       window.clearTimeout(safetyTimer)
+      toast.dismiss('auth-reconnect')
       sub.subscription.unsubscribe()
     }
   }, [])

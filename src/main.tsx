@@ -8,7 +8,10 @@ import { AuthProvider } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { initSentry, SentryErrorBoundary } from '@/lib/sentry'
 import './index.css'
-import 'leaflet/dist/leaflet.css'
+
+// Sprint 10 : leaflet.css n'est PAS importé ici globalement — il l'est dans
+// PianoMap.tsx, dans le chunk lazy MapPage. Économise ~10 KB CSS sur tous
+// les chunks non-carte (Dashboard, Settings, Auth, Legal).
 
 initSentry()
 
@@ -49,8 +52,12 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                     padding: '0.625rem 0.875rem',
                     boxShadow: '0 10px 25px -10px rgba(0,0,0,0.15)'
                   },
-                  success: { iconTheme: { primary: 'hsl(var(--primary))', secondary: 'white' } },
-                  error: { iconTheme: { primary: 'hsl(var(--destructive))', secondary: 'white' } }
+                  success: {
+                    iconTheme: { primary: 'hsl(var(--primary))', secondary: 'white' }
+                  },
+                  error: {
+                    iconTheme: { primary: 'hsl(var(--destructive))', secondary: 'white' }
+                  }
                 }}
               />
             </AuthProvider>
