@@ -101,8 +101,7 @@ export function Tutorial() {
     <div className="animate-fade-in fixed inset-0 z-[2000] flex items-end justify-center bg-black/50 backdrop-blur-sm sm:items-center">
       <div
         key={step}
-        className="animate-slide-up-modal sm:animate-scale-in relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-6 shadow-2xl sm:rounded-2xl"
-        style={{ paddingBottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
+        className="animate-slide-up-modal sm:animate-scale-in relative w-full max-w-sm rounded-t-2xl border border-border bg-popover p-6 pb-safe-tutorial-bottom shadow-2xl sm:rounded-2xl"
       >
         {/* Sprint 6 — X header visible pour skip rapide (avant : seul le lien
             "Passer le tutoriel" en bas, peu visible mobile). Garde aussi le

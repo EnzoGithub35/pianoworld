@@ -31,8 +31,7 @@ export function EventCard({
   const [busy, setBusy] = useState(false)
 
   const isFull =
-    event.max_participants !== null &&
-    event.participants_count >= event.max_participants
+    event.max_participants !== null && event.participants_count >= event.max_participants
   const startMs = new Date(event.starts_at).getTime()
   const endMs = event.ends_at ? new Date(event.ends_at).getTime() : null
   const nowMs = Date.now()
@@ -88,7 +87,7 @@ export function EventCard({
 
   const handleCancel = async () => {
     if (busy) return
-    if (!window.confirm("Annuler cet évènement pour tout le monde ?")) return
+    if (!window.confirm('Annuler cet évènement pour tout le monde ?')) return
     setBusy(true)
     try {
       const { error } = await supabase
@@ -114,7 +113,9 @@ export function EventCard({
       <header className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-display text-lg font-bold tracking-tight">{event.title}</h3>
+            <h3 className="font-display text-lg font-bold tracking-tight">
+              {event.title}
+            </h3>
             {isLive && <Badge variant="success">en cours</Badge>}
             {isFull && !isLive && <Badge variant="warning">complet</Badge>}
           </div>
@@ -141,13 +142,15 @@ export function EventCard({
         )}
       </header>
 
-      <p className="whitespace-pre-wrap text-sm text-muted-foreground">{event.description}</p>
+      <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+        {event.description}
+      </p>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
         <div className="flex items-center gap-2">
           <div className="flex">
             {event.participants_preview.map((p, i) => (
-              <div key={p.id} style={{ marginLeft: i === 0 ? 0 : '-0.5rem' }}>
+              <div key={p.id} className={i === 0 ? undefined : '-ml-2'}>
                 <Avatar pseudo={p.pseudo} size="sm" ring />
               </div>
             ))}
@@ -165,12 +168,7 @@ export function EventCard({
               Je ne viens plus
             </Button>
           ) : (
-            <Button
-              size="sm"
-              loading={busy}
-              disabled={isFull}
-              onClick={handleJoin}
-            >
+            <Button size="sm" loading={busy} disabled={isFull} onClick={handleJoin}>
               {isFull ? 'Complet' : 'Je viens'}
             </Button>
           ))}

@@ -4,10 +4,7 @@ import { Users } from 'lucide-react'
 import { Avatar } from '@/components/ui/Avatar'
 import { usePianoVisits, type PianoVisitWithAuthor } from '@/hooks/usePianoVisits'
 import { fromNow } from '@/lib/date'
-import {
-  VISITORS_HEADLINE_ROTATION_MS,
-  VISITS_DISPLAY_LIMIT
-} from '@/lib/constants'
+import { VISITORS_HEADLINE_ROTATION_MS, VISITS_DISPLAY_LIMIT } from '@/lib/constants'
 
 /**
  * Stack d'avatars des derniers visiteurs uniques + headline rotatif au-dessus.
@@ -99,15 +96,12 @@ export function VisitorStack({ pianoId }: { pianoId: string }) {
       <div className="flex items-center gap-3">
         <div className="flex">
           {visible.map((v, i) => (
-            <div key={v.id} style={{ marginLeft: i === 0 ? 0 : '-0.5rem' }}>
+            <div key={v.id} className={i === 0 ? undefined : '-ml-2'}>
               {v.author && <Avatar pseudo={v.author.pseudo} size="sm" ring />}
             </div>
           ))}
           {extra > 0 && (
-            <div
-              style={{ marginLeft: '-0.5rem' }}
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-2 ring-background"
-            >
+            <div className="-ml-2 flex h-8 w-8 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-2 ring-background">
               +{extra}
             </div>
           )}
