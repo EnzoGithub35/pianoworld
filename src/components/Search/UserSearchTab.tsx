@@ -36,7 +36,7 @@ export function UserSearchTab() {
             type="search"
             inputMode="search"
             autoComplete="off"
-            placeholder="Pseudo, nom ou prénom..."
+            placeholder="Pseudo (ou prénom/nom si renseigné)"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             className="flex h-11 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
@@ -84,7 +84,7 @@ export function UserSearchTab() {
           <EmptyState
             icon={<SearchIcon className="h-6 w-6" />}
             title="Aucun résultat"
-            description="Essaye avec une autre orthographe ou cherche par email."
+            description="Essaye une autre orthographe, ou cherche par email — la personne peut aussi avoir choisi de ne pas afficher son prénom/nom."
           />
         )}
 
@@ -92,7 +92,7 @@ export function UserSearchTab() {
         <EmptyState
           icon={<SearchIcon className="h-6 w-6" />}
           title="Trouve quelqu'un"
-          description="Tape un pseudo, un nom ou un prénom pour chercher."
+          description="Tape un pseudo pour chercher (ou un prénom/nom si la personne l'a renseigné dans ses paramètres)."
         />
       )}
 

@@ -130,7 +130,7 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
           setShowSuggestions(false)
         })
         .finally(() => setSearchingAddress(false))
-    }, 300)
+    }, 200) // Sprint UX : 300 → 200 ms pour feedback plus instantané (Photon n'a pas de rate-limit strict)
     return () => window.clearTimeout(t)
   }, [address])
 
@@ -397,9 +397,26 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
                 </ul>
               )}
             </div>
-            <p className="text-[11px] text-muted-foreground">
-              Tape une adresse pour ajouter un piano que tu ne vois pas sur la carte.
-            </p>
+            {/* Sprint UX : encart fallback visible quand l'utilisateur a tapé ≥ 3
+                caractères mais Photon ne retourne aucune suggestion. Sans ça,
+                le user pense que l'app est cassée alors qu'il peut toujours
+                cliquer la carte pour positionner manuellement. */}
+            {address.trim().length >= 3 &&
+            !searchingAddress &&
+            addressSuggestions.length === 0 ? (
+              <div className="flex items-start gap-2 rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                <Search className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <span>
+                  Aucune adresse trouvée. <strong>Touche la carte</strong> pour
+                  positionner ton piano, ou re-essaye avec moins de mots.
+                </span>
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                Tape une adresse (ex. « Gare de Rennes ») ou clique sur la carte. Tu
+                pourras toujours dragger le marker pour ajuster.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">

@@ -69,6 +69,9 @@ export function PianoUpdateForm({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>Le piano est-il toujours là ?</Label>
+        <p className="text-[11px] text-muted-foreground">
+          Obligatoire — ça met à jour son statut sur la carte (visible / disparu).
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"

@@ -1,5 +1,5 @@
 import { logger } from '@/lib/logger'
-import { GEOCODE_AUTOCOMPLETE_LIMIT } from '@/lib/constants'
+import { DEFAULT_MAP_CENTER, GEOCODE_AUTOCOMPLETE_LIMIT } from '@/lib/constants'
 
 /**
  * Wrapper minimal pour deux APIs OSM gratuites :
@@ -32,9 +32,13 @@ type PhotonFeature = {
 function photonToResult(f: PhotonFeature): GeocodeResult {
   const [lng, lat] = f.geometry.coordinates
   const p = f.properties
+  const street = [p.housenumber, p.street].filter(Boolean).join(' ')
+  // Sprint UX : préfixer par le nom du POI (Gare de Rennes, Cathédrale, etc.)
+  // dès qu'il existe ET diffère de l'adresse — rend les lieux nommés
+  // immédiatement reconnaissables dans le dropdown autocomplete.
   const parts = [
-    [p.housenumber, p.street].filter(Boolean).join(' '),
-    p.name && !p.street ? p.name : null,
+    p.name && p.name !== street ? p.name : null,
+    street,
     p.postcode,
     p.city,
     p.country
@@ -42,13 +46,23 @@ function photonToResult(f: PhotonFeature): GeocodeResult {
   return { lat, lng, label: parts.join(', ') }
 }
 
-/** Autocomplete d'adresse, retourne [] si la query est trop courte. */
+/** Autocomplete d'adresse, retourne [] si la query est trop courte.
+ *
+ *  Biais géographique vers `DEFAULT_MAP_CENTER` (Rennes) via `lat`/`lon` +
+ *  `location_bias_scale=0.2` — important pour qu'un user qui tape "Gare"
+ *  voie d'abord "Gare de Rennes" plutôt que "Gare du Nord" (Paris).
+ *  Le biais est doux : si la query est sans ambigüité (ex. "Tour Eiffel"),
+ *  Photon retourne quand même le bon résultat.
+ */
 export async function searchAddress(
   query: string,
   limit = GEOCODE_AUTOCOMPLETE_LIMIT
 ): Promise<GeocodeResult[]> {
   if (query.trim().length < 3) return []
-  const url = `${PHOTON_URL}?q=${encodeURIComponent(query)}&limit=${limit}&lang=fr`
+  const [biasLat, biasLng] = DEFAULT_MAP_CENTER
+  const url =
+    `${PHOTON_URL}?q=${encodeURIComponent(query)}&limit=${limit}&lang=fr` +
+    `&lat=${biasLat}&lon=${biasLng}&location_bias_scale=0.2`
   try {
     const res = await fetch(url)
     if (!res.ok) {
@@ -70,7 +84,11 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
   try {
     const res = await fetch(url, { headers: { 'User-Agent': USER_AGENT } })
     if (!res.ok) {
-      logger.warn('geocoding.reverse', 'nominatim non-OK', { status: res.status, lat, lng })
+      logger.warn('geocoding.reverse', 'nominatim non-OK', {
+        status: res.status,
+        lat,
+        lng
+      })
       return fallback
     }
     const json = (await res.json()) as { display_name?: string }
