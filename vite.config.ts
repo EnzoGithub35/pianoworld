@@ -8,17 +8,30 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'robots.txt'],
+      includeAssets: [
+        'favicon.svg',
+        'favicon.ico',
+        'apple-touch-icon-180x180.png',
+        'robots.txt'
+      ],
       manifest: {
         name: 'PianoWorld',
         short_name: 'PianoWorld',
         description: 'Carte interactive des pianos publics',
-        theme_color: '#0f172a',
-        background_color: '#ffffff',
+        // Couleurs alignées avec le branding "Bois de piano" :
+        // - theme_color : ambre/orange du favicon (status bar mobile)
+        // - background_color : crème PianoWorld (splash screen sans flash blanc)
+        theme_color: '#c97a1e',
+        background_color: '#FAF7F0',
         display: 'standalone',
         orientation: 'portrait',
         start_url: '/',
         icons: [
+          {
+            src: 'pwa-64x64.png',
+            sizes: '64x64',
+            type: 'image/png'
+          },
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
@@ -30,10 +43,10 @@ export default defineConfig({
             type: 'image/png'
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'maskable-icon-512x512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable'
+            purpose: 'maskable'
           }
         ]
       },
