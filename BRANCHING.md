@@ -1,18 +1,19 @@
 # Stratégie de branche — PianoWorld (solo)
 
-Modèle : **GitHub Flow** simple + Conventional Commits + branche unique de production.
-Pourquoi : minimum d'overhead pour un dev solo, mais discipline pro : chaque change passe par une PR, CI verte obligatoire, history linéaire.
+Modèle : **GitHub Flow** + Conventional Commits + **2 branches longues** (`staging` → `main`).
+Pourquoi : minimum d'overhead pour un dev solo, mais discipline pro : chaque change passe par une PR, CI verte obligatoire ; et on valide sur un **staging** isolé avant de toucher la vraie prod.
 
 ---
 
 ## Branches
 
-| Nom             | Rôle                            | Protection                  | Déploiement Vercel                      |
-| --------------- | ------------------------------- | --------------------------- | --------------------------------------- |
-| `main`          | Production, toujours déployable | ✅ activée (cf. ci-dessous) | **Auto-deploy prod** sur push           |
-| `<type>/<slug>` | Travail en cours                | ❌                          | **Preview deploy** automatique sur push |
+| Nom             | Rôle                                            | Protection                  | Déploiement Vercel                             |
+| --------------- | ----------------------------------------------- | --------------------------- | ---------------------------------------------- |
+| `main`          | **Production** (vraie app), toujours déployable | ✅ activée (cf. ci-dessous) | **Auto-deploy PROD** (projet Vercel prod)      |
+| `staging`       | **Staging** (pré-prod, `pianoworld.vercel.app`) | ✅ activée                  | **Auto-deploy STAGING** (projet Vercel actuel) |
+| `<type>/<slug>` | Travail en cours                                | ❌                          | **Preview deploy** automatique sur push        |
 
-Pas de `develop`. Pas de `release`. Pas de `hotfix`. Tout passe par `main` via PR.
+Pas de `release` ni `hotfix` dédiés. Deux branches longues : `staging` (pré-prod) et `main` (prod). Le travail passe par `staging` **avant** d'être promu sur `main` — cf. [§ Environnements](#environnements-staging--prod) et [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
 
 ### Convention de nommage des branches
 
@@ -33,11 +34,35 @@ Pas de `develop`. Pas de `release`. Pas de `hotfix`. Tout passe par `main` via P
 
 ---
 
+## Environnements (staging / prod)
+
+Deux environnements **totalement isolés** (front Vercel + back Supabase chacun). Setup complet dans [docs/ENVIRONMENTS.md](docs/ENVIRONMENTS.md).
+
+| Branche   | Environnement | Front                   | Supabase           |
+| --------- | ------------- | ----------------------- | ------------------ |
+| `staging` | Pré-prod      | `pianoworld.vercel.app` | projet #1 (actuel) |
+| `main`    | Production    | URL prod (à décider)    | projet #2 (vierge) |
+
+**Flux de promotion** :
+
+```
+feat/xxx ──PR──▶ staging ──(validé sur pianoworld.vercel.app)──▶ main ──▶ PROD
+```
+
+1. Brancher depuis `staging` (la pré-prod intègre tout en premier).
+2. PR vers **`staging`** → merge → déploie sur `pianoworld.vercel.app` (contre Supabase staging).
+3. Tester en réel (mobile inclus).
+4. Quand c'est validé, **PR `staging` → `main`** → déploie en prod.
+
+> Un correctif n'arrive **jamais** sur `main` sans être passé par `staging` (sauf hotfix critique, cf. § dédié).
+
+---
+
 ## Workflow standard
 
 ```powershell
-# 1. Toujours partir d'un main à jour
-git switch main
+# 1. Toujours partir d'un staging à jour (la pré-prod intègre tout en premier)
+git switch staging
 git pull --ff-only
 
 # 2. Créer la branche
@@ -50,7 +75,7 @@ git commit -m "feat(auth): require CGU acceptance on signup"
 # 4. Pusher
 git push -u origin feat/cgu-checkbox
 
-# 5. Ouvrir une PR vers main (GitHub UI ou gh CLI)
+# 5. Ouvrir une PR vers staging (GitHub UI ou gh CLI)
 #    → CI tourne automatiquement (typecheck + lint + tests + build, ~3 min)
 #    → Vercel poste un Preview URL en commentaire
 #    → Tu vérifies le diff + tu testes l'URL preview sur mobile
@@ -61,12 +86,15 @@ git push -u origin feat/cgu-checkbox
 #    `npm run test:e2e:setup && npm run test:e2e`
 
 # 6. Merge (default: Create a merge commit) une fois CI verte
-#    → Vercel auto-deploy main en prod
+#    → Vercel auto-deploy STAGING (pianoworld.vercel.app)
 #    → Supprimer la branche locale + remote
-git switch main
+git switch staging
 git pull --ff-only
 git branch -d feat/cgu-checkbox
 git push origin --delete feat/cgu-checkbox
+
+# 7. Promotion en PROD : quand staging est validé, PR staging → main
+#    → merge → Vercel auto-deploy la vraie app (projet Vercel prod)
 ```
 
 ### Pourquoi une PR même solo ?
@@ -157,6 +185,8 @@ Le `!` après le scope + le footer `BREAKING CHANGE:` déclenchent le bump major
 - ✅ Include administrators (toi compris — la discipline marche que si tu te l'imposes aussi)
 
 Une fois activé, **tu ne peux plus push directement sur main**. Tout passe par PR + CI verte.
+
+> **Applique la même règle à `staging`** (duplique la protection, pattern `staging`). C'est ton image pré-prod : elle doit rester verte et déployable à tout moment.
 
 ---
 
