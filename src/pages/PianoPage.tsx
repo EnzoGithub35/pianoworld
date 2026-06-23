@@ -13,6 +13,7 @@ import { PianoShareButton } from '@/components/Piano/PianoShareButton'
 import { PianoReportButton } from '@/components/Piano/PianoReportButton'
 import { PianoActivity } from '@/components/Piano/PianoActivity'
 import { PianoPresenceCounter } from '@/components/Piano/PianoPresenceCounter'
+import { PresenceFlow } from '@/components/Piano/PresenceFlow'
 import { FavoriteButton } from '@/components/Piano/FavoriteButton'
 import { Button } from '@/components/ui/Button'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -164,6 +165,16 @@ export function PianoPage() {
           </div>
         )}
 
+        {/* Sprint UX : CTA principal "Signaler ma présence" remonté ici (vs
+            tout en bas de PianoActivity, hors fold sur mobile). Le bouton est
+            visible dès l'arrivée sur la page → user comprend qu'il peut
+            planifier ou enregistrer un passage. */}
+        {user && (
+          <div className="pt-1">
+            <PresenceFlow pianoId={piano.id} />
+          </div>
+        )}
+
         {user && user.id !== piano.created_by && (
           <div className="flex justify-end">
             <PianoReportButton pianoId={piano.id} />
@@ -172,12 +183,13 @@ export function PianoPage() {
 
         <PianoActivity pianoId={piano.id} />
 
-        {/* Mise à jour */}
+        {/* Mise à jour — Sprint UX : heading impératif "J'y suis passé" (vs
+            "Mise à jour" générique qui ne dit pas ce qu'on signale). */}
         <section className="space-y-3 rounded-xl border border-border bg-card p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <MapPin className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold">Mise à jour</h2>
+              <h2 className="text-sm font-semibold">J'y suis passé</h2>
             </div>
             <Button
               size="sm"

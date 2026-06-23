@@ -1,16 +1,14 @@
 import { Users } from 'lucide-react'
 import { SessionList } from './SessionList'
-import { PresenceFlow } from './PresenceFlow'
 import { VisitorStack } from './VisitorStack'
 
 /**
  * Section "Activité" sur PianoPage : sessions (live + à venir) + passages
- * récents + un CTA unifié "Signaler ma présence" (audit Sprint 3 P1/M —
- * remplace les 2 boutons VisitButton + SessionButton par un flow dialog
- * passé/futur pour rendre le mental model explicite côté newcomer).
+ * récents.
  *
- * Embarquée par PianoPage entre les boutons d'action (Naviguer / Partager)
- * et la section "Mise à jour".
+ * Sprint UX : le CTA "Signaler ma présence" (PresenceFlow) a été déplacé
+ * dans les actions du haut de PianoPage (visible above-the-fold mobile).
+ * La section reste consultative — listes uniquement, pas de CTA.
  */
 export function PianoActivity({ pianoId }: { pianoId: string }) {
   return (
@@ -25,10 +23,6 @@ export function PianoActivity({ pianoId }: { pianoId: string }) {
           Passages récents
         </div>
         <VisitorStack pianoId={pianoId} />
-      </div>
-
-      <div className="border-t border-border pt-4">
-        <PresenceFlow pianoId={pianoId} />
       </div>
     </section>
   )
