@@ -2,7 +2,7 @@
 
 Carte interactive et communautaire des pianos publics. Stack React + Vite + Supabase + Leaflet, 100% gratuit à héberger, mobile-first, PWA installable. Démarrage focalisé sur Rennes mais carte ouverte partout.
 
-État actuel : **v7 livrée + Sprints 6-11 fusionnés sur main**. v1→v5 livrées (notifications, communauté, audit log, RGPD complet, sécurité durcie). v6 livrée (système d'amitié bidirectionnel + visibility sessions friends/public + compteur présence). v7 PR-A backend + PR-B frontend livrées (recherche unifiée users/pianos via pg_trgm + first_name/last_name opt-in + pianos favoris + notif `piano_favorite_update` + SearchTabs + FavoriteButton + FavoritesTab + NavBar 5e icône Amis + EditNamesDialog + FriendsPage standalone). Sprints audit 6-11 livrés : UX heuristics fixes, sécu A.7 EXIF strip + A.6.4 signup IP rate-limit, wording "session"→"créneau", pgTAP RLS tests (88 assertions), hygiène code, Playwright E2E golden paths + Supabase local + nightly CI.
+État actuel : **v8 Phase 1 en cours + v7 livrée + Sprints 6-12 fusionnés sur main**. v1→v5 livrées (notifications, communauté, audit log, RGPD complet, sécurité durcie). v6 livrée (système d'amitié bidirectionnel + visibility sessions friends/public + compteur présence). v7 PR-A backend + PR-B frontend livrées (recherche unifiée users/pianos via pg_trgm + first_name/last_name opt-in + pianos favoris + notif `piano_favorite_update` + SearchTabs + FavoriteButton + FavoritesTab + NavBar 5e icône Amis + EditNamesDialog + FriendsPage standalone). Sprints audit 6-12 livrés : UX heuristics fixes, sécu A.7 EXIF strip + A.6.4 signup IP rate-limit, wording "session"→"créneau", pgTAP RLS tests (88 assertions), hygiène code, Playwright E2E golden paths + Supabase local + nightly CI, CSP nonces (`'unsafe-inline'` retiré). **v8 Phase 1 (en cours)** : landing publique sur `/` + carte protégée sur `/map` + meta SEO (og:image, og:title, twitter:card, canonical) + robots.txt + sitemap.xml — première porte d'entrée pour newcomers non auth + acquisition organique débloquée.
 
 Voir la section [Sprints récents (6-11)](#sprints-récents-6-11) ci-dessous pour le détail commit par commit.
 
@@ -200,7 +200,8 @@ src/
                                   # + RemoveFriendDialog (confirmation textuelle "retirer")
     Search/                       # v7 — SearchTabs + UserSearchTab + PianoSearchTab + EmailSearchDialog
     Dashboard/ActivityTab.tsx + FavoritesTab.tsx (v7)
-  pages/                          # toutes lazy : AuthPage, MapPage, Dashboard (4 tabs),
+  pages/                          # toutes lazy : LandingPage (v8 public `/`), AuthPage,
+                                  # MapPage (v8 `/map` protégé), Dashboard (4 tabs),
                                   # SearchPage, SettingsPage, UserPage, FriendsPage (v7),
                                   # PianoPage, LegalPage, AdminPage
   test/setup.ts
@@ -327,6 +328,15 @@ Compression client agressive (200 Ko/photo) → ~5000 photos. Si dépassement, s
 
 Premier accès = quelques secondes de réveil. Non bloquant mais peut causer un `safety timeout` côté AuthContext (8s).
 
+### v8 — la racine `/` est désormais la landing publique, la carte est sur `/map`
+
+Depuis v8 Phase 1, `/` sert la `LandingPage` publique (non protégée, lazy). La carte protégée a migré sur `/map`. Conséquences :
+
+- Tout nouveau lien interne vers la carte doit pointer `/map`, pas `/`.
+- Les `navigate('/')` post-login ou post-mutation continuent de "marcher" mais atterrissent sur la landing — pas ce qu'on veut pour un user loggué. AuthPage défaut = `/map` désormais ; même pattern à appliquer côté nouvelles features (cf. `DeletePianoDialog`, `ResetPasswordForm`, `RequireAdmin`).
+- Le `*` fallback retombe sur `/` (landing) — volontaire pour qu'un user perdu non loggué tombe sur la première page d'acquisition.
+- `og-image.png` actuel = placeholder copié depuis `pwa-512x512.png` (512x512 carré). À régénérer en 1200x630 pour les previews sociaux propres (cf. POST-DEPLOY backlog).
+
 ### commitlint subject lowercase
 
 Le commit-msg hook refuse les sujets avec capitalisation incohérente. Subject doit être **lowercase strict** ou **sentence-case strict**. Les acronymes en milieu (RGPD, CGU, RLS, RPC, CI) cassent → écrire `rgpd`, `cgu`, `rls`, etc. dans le subject. Le body peut être normal.
@@ -424,6 +434,7 @@ Contrairement à `Dashboard` qui utilise `?tab=`, `AdminPage` garde l'onglet en 
 | Le compteur de présence v6                  | [src/components/Piano/PianoPresenceCounter.tsx](src/components/Piano/PianoPresenceCounter.tsx) + `usePianoPresence`                                                                             |
 | Les RPCs v7 search/favoris                  | [supabase/schema.sql](supabase/schema.sql) section 15.h + [docs/RPCS.md](docs/RPCS.md)                                                                                                          |
 | Le helper rate-limit RPC body v7            | [supabase/schema.sql](supabase/schema.sql) `enforce_caller_rate_limit`                                                                                                                          |
+| La landing publique v8 (SEO + CTA)          | [src/pages/LandingPage.tsx](src/pages/LandingPage.tsx) + [index.html](index.html) meta og + [public/robots.txt](public/robots.txt) + [public/sitemap.xml](public/sitemap.xml)                   |
 
 ---
 

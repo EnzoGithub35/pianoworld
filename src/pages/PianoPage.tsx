@@ -48,7 +48,7 @@ export function PianoPage() {
           title="Piano introuvable"
           description="Il a peut-être été supprimé."
           action={
-            <Button variant="outline" size="sm" onClick={() => navigate('/')}>
+            <Button variant="outline" size="sm" onClick={() => navigate('/map')}>
               Retour à la carte
             </Button>
           }
@@ -60,10 +60,11 @@ export function PianoPage() {
   const isOwner = user?.id === piano.created_by
 
   // Fallback "Retour" si on est arrivé par deep-link partagé (history.length <= 1)
-  // → on évite que `navigate(-1)` sorte de l'app.
+  // → on évite que `navigate(-1)` sorte de l'app. Si l'user est loggué, on
+  // l'envoie sur la carte (route protégée) ; sinon sur la landing publique.
   const handleBack = () => {
     if (window.history.length > 1) navigate(-1)
-    else navigate('/')
+    else navigate(user ? '/map' : '/')
   }
 
   return (

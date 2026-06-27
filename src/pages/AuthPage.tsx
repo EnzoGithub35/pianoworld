@@ -139,8 +139,10 @@ export function AuthPage() {
   if (user && !isReset && !isConfirmPending) {
     // Si on a une destination préservée (depuis RequireAuth), on y retourne.
     // Sinon défaut sur la carte. Le `from` peut contenir search + hash.
+    // v8 : la racine `/` est désormais la landing publique — on envoie vers
+    // `/map` qui est la première route protégée utile.
     const state = location.state as { from?: string } | null
-    const target = state?.from && state.from !== '/auth' ? state.from : '/'
+    const target = state?.from && state.from !== '/auth' ? state.from : '/map'
     return <Navigate to={target} replace />
   }
 
