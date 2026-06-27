@@ -30,7 +30,7 @@ export function ResetPasswordForm() {
         throw error
       }
       toast.success('Mot de passe mis à jour')
-      navigate('/', { replace: true })
+      navigate('/map', { replace: true })
     } catch (err) {
       toast.error(getErrorMessage(err, 'Échec de la mise à jour'))
     } finally {

@@ -25,19 +25,21 @@ Dernière mise à jour : **2026-06-20** (Sprint 11 E2E Playwright livré, Sprint
 
 Items restants après Sprint 11. Source canonique : [CLAUDE.md § Sprints récents (6-11)](../CLAUDE.md). Détail sécurité dans [docs/SECURITY.md § Backlog](SECURITY.md).
 
-| #     | Item                                                           | Effort | Priorité                 |
-| ----- | -------------------------------------------------------------- | ------ | ------------------------ |
-| A.1.2 | Chiffrement `push_subscriptions` (Vault Supabase)              | M      | P3 — non dispo free tier |
-| A.5   | CSP nonces (retirer `'unsafe-inline'`, Vercel middleware Edge) | L      | **P1** sécu              |
-| A.6.3 | 2FA TOTP admin (Supabase MFA)                                  | M      | P3                       |
-| B.3   | Component/hook tests Vitest + MSW                              | L      | P2                       |
-| C.1   | Dialog focus trap (a11y)                                       | S      | P2                       |
-| C.2   | Tabs ArrowLeft/Right keyboard handler (a11y)                   | S      | P2                       |
-| C.3   | `AddFriendButton.findPendingId` stub null (UX dégradée)        | S      | P2                       |
-| C.4   | AdminPage tabs URL-synced (refresh perd l'onglet)              | S      | P3                       |
-| PWA   | Icons PNG `pwa-192x192.png` + `pwa-512x512.png` à générer      | XS     | P2 user-side             |
+| #     | Item                                                                                                                  | Effort | Priorité                 |
+| ----- | --------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------ |
+| A.1.2 | Chiffrement `push_subscriptions` (Vault Supabase)                                                                     | M      | P3 — non dispo free tier |
+| A.5   | CSP nonces (retirer `'unsafe-inline'`, Vercel middleware Edge)                                                        | L      | **P1** sécu              |
+| A.6.3 | 2FA TOTP admin (Supabase MFA)                                                                                         | M      | P3                       |
+| B.3   | Component/hook tests Vitest + MSW                                                                                     | L      | P2                       |
+| C.1   | Dialog focus trap (a11y)                                                                                              | S      | P2                       |
+| C.2   | Tabs ArrowLeft/Right keyboard handler (a11y)                                                                          | S      | P2                       |
+| C.3   | `AddFriendButton.findPendingId` stub null (UX dégradée)                                                               | S      | P2                       |
+| C.4   | AdminPage tabs URL-synced (refresh perd l'onglet)                                                                     | S      | P3                       |
+| PWA   | Icons PNG `pwa-192x192.png` + `pwa-512x512.png` à générer                                                             | XS     | P2 user-side             |
+| v8.1  | `public/og-image.png` vrai 1200x630 (actuellement = copie `pwa-512x512.png`, ratio carré → previews sociaux dégradés) | XS     | P2 user-side             |
+| v8.2  | Soumettre `sitemap.xml` à Google Search Console + Bing Webmaster Tools (après déploiement de la landing v8 sur prod)  | XS     | P2 user-side             |
 
-Pour démarrer un sprint sur un de ces items, ouvrir une branche `feat/audit-sprint-<n>-<topic>` (cf. [BRANCHING.md](../BRANCHING.md) convention).
+Pour démarrer un sprint sur un de ces items, ouvrir une branche `feat/v<n>-<topic>` (cf. [BRANCHING.md](../BRANCHING.md) convention).
 
 ---
 
