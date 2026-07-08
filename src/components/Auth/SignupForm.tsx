@@ -4,7 +4,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
 import { signupSchema, type SignupValues } from '@/lib/schemas'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -31,7 +31,7 @@ export function SignupForm() {
       }
       toast.success('Bienvenue !')
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Inscription échouée'))
+      toast.error(getFriendlyErrorMessage(err, { fallback: 'Inscription échouée' }))
     } finally {
       setSubmitting(false)
     }

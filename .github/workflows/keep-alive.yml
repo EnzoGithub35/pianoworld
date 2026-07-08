@@ -1,0 +1,67 @@
+name: Keep-Alive Supabase
+
+# Sprint v8 Phase 1.5 — prévention cold-start Supabase (cause identifiée
+# des 522 Cloudflare sur /auth/v1/token observés le 2026-07-08).
+#
+# Toutes les 10 min :
+#   1. HEAD /auth/v1/settings         → chauffe GoTrue (le vrai coupable des 522)
+#   2. POST /rest/v1/rpc/ping_health  → chauffe PostgREST + PgBouncer + DB
+#
+# Volume : 144 hits/jour/endpoint. Largement sous le quota free tier
+# (500K requêtes/mois pour anon + auth). Le premier ping après idle
+# absorbe le coût du cold-start pour l'utilisateur suivant.
+#
+# Secrets requis (Settings > Secrets and variables > Actions) :
+#   - PING_SUPABASE_URL       : ex. https://gljmcevjdkqfqtbnlfve.supabase.co
+#   - PING_SUPABASE_ANON_KEY  : la clé anon (déjà exposée en clair dans le
+#                                bundle JS Vercel, aucun risque de sécurité
+#                                additionnel à la mettre en secret CI).
+#
+# workflow_dispatch pour test manuel. Cron = format standard cron. Note :
+# GitHub peut retarder les crons de quelques minutes sous charge.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '*/10 * * * *'
+
+jobs:
+  ping:
+    name: Ping Supabase endpoints
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Ping GoTrue (auth)
+        env:
+          URL: ${{ secrets.PING_SUPABASE_URL }}
+        run: |
+          if [ -z "$URL" ]; then
+            echo "::warning ::PING_SUPABASE_URL secret missing, skipping."
+            exit 0
+          fi
+          echo "→ HEAD ${URL}/auth/v1/settings"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 30 --retry 2 --retry-delay 5 \
+            -X HEAD "${URL}/auth/v1/settings" || echo "curl_failed")
+          echo "auth /settings → HTTP ${code}"
+
+      - name: Ping PostgREST (ping_health RPC)
+        env:
+          URL: ${{ secrets.PING_SUPABASE_URL }}
+          ANON: ${{ secrets.PING_SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$ANON" ]; then
+            echo "::warning ::PING_SUPABASE_URL or PING_SUPABASE_ANON_KEY secret missing, skipping."
+            exit 0
+          fi
+          echo "→ POST ${URL}/rest/v1/rpc/ping_health"
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            --max-time 30 --retry 2 --retry-delay 5 \
+            -X POST \
+            -H "apikey: ${ANON}" \
+            -H "Authorization: Bearer ${ANON}" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            "${URL}/rest/v1/rpc/ping_health" || echo "curl_failed")
+          echo "rpc /ping_health → HTTP ${code}"

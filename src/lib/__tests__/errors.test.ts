@@ -6,6 +6,7 @@ import {
   isPermissionDenied,
   isRateLimitError,
   isInvalidPassword,
+  isTransientNetworkError,
   getRateLimitAction,
   getFriendlyErrorMessage
 } from '@/lib/errors'
@@ -120,6 +121,61 @@ describe('getRateLimitAction', () => {
   })
 })
 
+describe('isTransientNetworkError', () => {
+  it('détecte Cloudflare 522 (Connection Timed Out)', () => {
+    expect(
+      isTransientNetworkError({ status: 522, message: 'Connection Timed Out' })
+    ).toBe(true)
+  })
+  it('détecte Cloudflare 524', () => {
+    expect(isTransientNetworkError({ status: 524, message: 'A timeout occurred' })).toBe(
+      true
+    )
+  })
+  it('détecte 502/503/504', () => {
+    expect(isTransientNetworkError({ status: 502, message: 'Bad Gateway' })).toBe(true)
+    expect(isTransientNetworkError({ status: 503, message: 'Service Unavailable' })).toBe(
+      true
+    )
+    expect(isTransientNetworkError({ status: 504, message: 'Gateway Timeout' })).toBe(
+      true
+    )
+  })
+  it('détecte AuthRetryableFetchError (supabase-js)', () => {
+    const err = Object.assign(new Error('network'), { name: 'AuthRetryableFetchError' })
+    expect(isTransientNetworkError(err)).toBe(true)
+  })
+  it('détecte AbortError (fetch timeout côté client)', () => {
+    const err = Object.assign(new Error('aborted'), { name: 'AbortError' })
+    expect(isTransientNetworkError(err)).toBe(true)
+  })
+  it("détecte 'Failed to fetch' (Chrome/Firefox network down)", () => {
+    expect(isTransientNetworkError(new TypeError('Failed to fetch'))).toBe(true)
+  })
+  it("détecte 'Load failed' (Safari network down)", () => {
+    expect(isTransientNetworkError(new TypeError('Load failed'))).toBe(true)
+  })
+  it('rejette 400 (bad request, ex. invalid password)', () => {
+    expect(isTransientNetworkError({ status: 400, message: 'Invalid credentials' })).toBe(
+      false
+    )
+  })
+  it('rejette 401 (unauthenticated)', () => {
+    expect(isTransientNetworkError({ status: 401, message: 'jwt expired' })).toBe(false)
+  })
+  it('rejette 429 (rate-limit auth)', () => {
+    expect(isTransientNetworkError({ status: 429, message: 'too many' })).toBe(false)
+  })
+  it('rejette null / undefined / string', () => {
+    expect(isTransientNetworkError(null)).toBe(false)
+    expect(isTransientNetworkError(undefined)).toBe(false)
+    expect(isTransientNetworkError('boom')).toBe(false)
+  })
+  it('rejette une PostgrestError classique (unique violation)', () => {
+    expect(isTransientNetworkError({ code: '23505', message: 'duplicate' })).toBe(false)
+  })
+})
+
 describe('getFriendlyErrorMessage', () => {
   it('formate un rate-limit avec délai si action connue', () => {
     const msg = getFriendlyErrorMessage(
@@ -148,5 +204,27 @@ describe('getFriendlyErrorMessage', () => {
     expect(getFriendlyErrorMessage(new Error('boom'), { fallback: 'erreur' })).toBe(
       'boom'
     )
+  })
+  it('message dédié pour incident réseau transitoire (522)', () => {
+    const msg = getFriendlyErrorMessage({
+      status: 522,
+      message: 'Connection Timed Out'
+    })
+    expect(msg.toLowerCase()).toContain('momentanément indisponible')
+    expect(msg.toLowerCase()).toContain('réessaie')
+  })
+  it('message dédié pour fetch fail', () => {
+    const msg = getFriendlyErrorMessage(new TypeError('Failed to fetch'))
+    expect(msg.toLowerCase()).toContain('momentanément indisponible')
+  })
+  it('priorité rate-limit métier sur transient si les deux matchent', () => {
+    // Un P0001 rate-limit ne doit PAS être classé transient (les codes
+    // Postgres 5xx sont sur les erreurs HTTP côté PostgREST, pas P0001).
+    const msg = getFriendlyErrorMessage({
+      code: 'P0001',
+      message: 'rate_limit_exceeded'
+    })
+    expect(msg.toLowerCase()).toContain('trop vite')
+    expect(msg.toLowerCase()).not.toContain('momentanément')
   })
 })
