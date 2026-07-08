@@ -1,4 +1,5 @@
 import * as Sentry from '@sentry/react'
+import { isTransientNetworkError } from './errors'
 
 /**
  * Init Sentry en prod uniquement. En dev, on reste sur console.* via le logger.
@@ -50,7 +51,7 @@ export function initSentry(): void {
     replaysOnErrorSampleRate: 0,
     environment: 'production',
     sendDefaultPii: false,
-    beforeSend(event) {
+    beforeSend(event, hint) {
       // Couches structurées : on enlève d'abord les champs sensibles connus.
       if (event.user) {
         delete event.user.email
@@ -59,6 +60,13 @@ export function initSentry(): void {
       if (event.request) {
         delete event.request.cookies
         delete event.request.headers
+      }
+      // v8 Phase 1.5 — Tag `transient: true` pour les incidents infra
+      // (522 Cloudflare, 5xx Supabase, fetch fail). On les garde dans Sentry
+      // (utile pour tracker les récurrences) mais on peut les filtrer via
+      // le dashboard Sentry pour ne pas polluer le triage des vrais bugs.
+      if (isTransientNetworkError(hint?.originalException)) {
+        event.tags = { ...event.tags, transient: 'true' }
       }
       // Puis on scrub récursivement toute string restante (logs ctx, breadcrumbs).
       return scrubDeep(event)

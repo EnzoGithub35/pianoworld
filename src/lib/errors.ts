@@ -75,6 +75,55 @@ export function isInvalidPassword(err: unknown): boolean {
 }
 
 /**
+ * Sprint v8 Phase 1.5 — erreurs réseau *transitoires* (incident infra, pas un
+ * bug applicatif). L'appelant peut retry ces erreurs via `withRetry`
+ * ([src/lib/net.ts](./net.ts)) sans risque de désynchronisation métier.
+ *
+ * Couvre :
+ *  - HTTP 502/503/504 (Bad Gateway / Service Unavailable / Gateway Timeout)
+ *  - HTTP 522/524 (Cloudflare "Connection Timed Out" — le vrai coupable
+ *    de l'incident 2026-07-08 sur `/auth/v1/token`)
+ *  - `AuthRetryableFetchError` (classe supabase-js jetée quand fetch échoue
+ *    pendant un `signInWithPassword` / `refreshSession`)
+ *  - `TypeError: Failed to fetch` (réseau coupé côté navigateur)
+ *  - `AbortError` / `TimeoutError` (requête abandonnée par timeout client)
+ *
+ * NE couvre PAS : 401/403 (auth), 400 (validation), 429 (rate-limit) — ce
+ * sont des erreurs "légitimes" qu'on ne doit pas retry silencieusement.
+ */
+export function isTransientNetworkError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false
+
+  // Classe supabase-js dédiée : "AuthRetryableFetchError" — nom explicite,
+  // ils la jettent uniquement pour les cas retryables (5xx + network).
+  const name = (err as { name?: unknown }).name
+  if (name === 'AuthRetryableFetchError') return true
+  if (name === 'AbortError' || name === 'TimeoutError') return true
+
+  // Status HTTP transitoires côté serveur / proxy Cloudflare
+  const status = (err as { status?: unknown }).status
+  if (typeof status === 'number') {
+    if (status === 502 || status === 503 || status === 504) return true
+    if (status === 522 || status === 524) return true // Cloudflare timeouts
+  }
+
+  // Fallback message-matching pour les fetch failures navigateur (TypeError)
+  // - Chrome/Firefox : "Failed to fetch"
+  // - Safari         : "Load failed"
+  // - iOS Safari     : "The network connection was lost"
+  const message = (err as { message?: unknown }).message
+  if (typeof message === 'string') {
+    const lower = message.toLowerCase()
+    if (lower.includes('failed to fetch')) return true
+    if (lower.includes('load failed')) return true
+    if (lower.includes('network connection was lost')) return true
+    if (lower.includes('networkerror')) return true
+  }
+
+  return false
+}
+
+/**
  * Pour une erreur rate-limit Postgres, extrait le nom de l'action depuis le
  * `hint` (rempli par `enforce_rate_limit`). Permet de formater un message
  * contextualisé "tu as atteint X/24h, réessaie demain".
@@ -125,6 +174,12 @@ export function getFriendlyErrorMessage(
   }
   if (isInvalidPassword(err)) {
     return 'Mot de passe incorrect.'
+  }
+  // v8 Phase 1.5 — incident infra transitoire (522, timeouts, fetch fail).
+  // Test *après* les erreurs métier (invalid_password / permission / rate-limit)
+  // sinon une 429 rate-limit auth serait swallowée comme un incident réseau.
+  if (isTransientNetworkError(err)) {
+    return 'Supabase est momentanément indisponible. Réessaie dans une minute — pas besoin de retaper tes identifiants.'
   }
   return getErrorMessage(err, fallback)
 }

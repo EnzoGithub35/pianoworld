@@ -3096,6 +3096,31 @@ revoke all on function public.check_signup_ip_allowed(text) from public, anon, a
 grant execute on function public.check_signup_ip_allowed(text) to service_role;
 
 -- ============================
+-- 17. Sprint v8 — Auth Resilience : RPC ping_health() (keep-alive externe)
+-- ============================
+-- Cible pour un ping externe (GitHub Actions cron */10) qui traverse
+-- Cloudflare → PostgREST → PostgreSQL. Empêche le projet Supabase free tier
+-- de "refroidir" (cold-start Auth/PostgREST/PgBouncer) — cause identifiée
+-- des 522 Cloudflare sur /auth/v1/token le 2026-07-08.
+--
+-- Volontairement trivial : `select 'ok'` sans IO ni join. Le simple fait
+-- de résoudre le call PostgREST + tourner la fn PL/pgSQL suffit à réchauffer
+-- le pool DB et les workers. Ouverte à anon + authenticated pour que le
+-- workflow GitHub Actions puisse hitter avec la clé anonyme.
+create or replace function public.ping_health()
+returns text
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select 'ok'::text;
+$$;
+
+revoke all on function public.ping_health() from public;
+grant execute on function public.ping_health() to anon, authenticated;
+
+-- ============================
 -- 12. Bootstrap superadmin (idempotent — à ré-exécuter après le 1er signup)
 -- ============================
 update public.profiles
