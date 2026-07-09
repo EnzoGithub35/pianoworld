@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
   pull_request:
-    branches: [main]
+    branches: [main, staging]
 
 # Annule automatiquement les runs en cours sur la même branche si un nouveau
 # push arrive — économise les minutes Actions sur les rafales de commits.

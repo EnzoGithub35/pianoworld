@@ -10,21 +10,19 @@ describe('fromNow', () => {
 
   it('contient un mot caractéristique du FR pour le passé', () => {
     const result = fromNow(new Date(Date.now() - 5 * 60 * 1000))
-    expect(result.toLowerCase()).toMatch(/il y a|minute/i)
+    expect(result.toLowerCase()).toMatch(/^il y a \d+ minutes?$/)
   })
 
   it('contient un mot caractéristique du FR pour le futur', () => {
     const result = fromNow(new Date(Date.now() + 5 * 60 * 1000))
-    expect(result.toLowerCase()).toMatch(/dans|minute/i)
+    expect(result.toLowerCase()).toMatch(/^dans \d+ minutes?$/)
   })
 })
 
 describe('formatDate', () => {
   it('formate une date ISO en `D MMM YYYY`', () => {
     const result = formatDate('2026-05-30T12:00:00Z')
-    // Tolère le formatage exact en fonction du locale système
-    expect(result).toMatch(/2026/)
-    expect(result.length).toBeGreaterThan(0)
+    expect(result).toBe('30 mai 2026')
   })
 })
 
