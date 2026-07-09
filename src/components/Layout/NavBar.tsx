@@ -8,7 +8,7 @@ const items = [
   // Label "Activité" plutôt que "Accueil" pour matcher le 1er onglet du Dashboard
   // (cohérence mentale : NavBar item = Dashboard tab par défaut).
   { to: '/dashboard', icon: LayoutDashboard, label: 'Activité' },
-  { to: '/', icon: MapIcon, label: 'Carte', end: true },
+  { to: '/map', icon: MapIcon, label: 'Carte' },
   { to: '/search', icon: Search, label: 'Recherche' },
   { to: '/friends', icon: Users, label: 'Amis' },
   { to: '/settings', icon: Settings, label: 'Paramètres' }
@@ -20,11 +20,10 @@ export function NavBar() {
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-border bg-background/95 pb-safe-bottom backdrop-blur-md supports-[backdrop-filter]:bg-background/80">
       <div className="mx-auto flex h-16 max-w-md items-stretch">
-        {items.map(({ to, icon: Icon, label, end }) => (
+        {items.map(({ to, icon: Icon, label }) => (
           <NavLink
             key={to}
             to={to}
-            end={end}
             className={({ isActive }) =>
               cn(
                 'group relative flex flex-1 flex-col items-center justify-center gap-1 text-[11px] font-medium transition-colors',

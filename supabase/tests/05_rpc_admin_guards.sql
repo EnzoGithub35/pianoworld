@@ -9,7 +9,7 @@
 --  - delete_my_account : password required
 
 begin;
-select plan(14);
+select plan(28);
 
 -- ---------------------------------------------------------------
 -- Setup : alice (user), bob (user), admin (admin), boss (superadmin)
@@ -164,6 +164,117 @@ select is(
   (select role::text from public.get_my_profile()),
   'admin',
   'DB: bob est maintenant admin (vérifié via get_my_profile pour bypass column grant)'
+);
+
+-- =====================================================================
+-- Chemins de succès (le fichier ne couvrait que forbidden/invalid_password)
+-- =====================================================================
+
+reset role;
+select pgtap_helpers.create_test_user('dave');
+select pgtap_helpers.create_test_user('erin');
+
+insert into public.piano_reports(id, piano_id, reported_by, reason)
+values (pgtap_helpers.uid_for('report1'), pgtap_helpers.uid_for('p1'), pgtap_helpers.uid_for('alice'), 'Faux signalement de test');
+
+insert into public.user_requests(id, user_id, subject, message)
+values (pgtap_helpers.uid_for('request1'), pgtap_helpers.uid_for('alice'), 'Question test', 'Message de test pour reply_to_request');
+
+-- 5.15 verify_my_password avec le BON mot de passe → true
+set local role authenticated;
+select set_config('request.jwt.claim.sub', pgtap_helpers.uid_for('alice')::text, true);
+
+select ok(
+  public.verify_my_password('pgtap-test-pwd'),
+  'auth alice: verify_my_password(bon mdp) → true'
+);
+
+-- Switch admin pour les succès des RPC admin
+select set_config('request.jwt.claim.sub', pgtap_helpers.uid_for('admin')::text, true);
+
+-- 5.16 set_user_banned(dave, true, bon mdp) → succès
+select lives_ok(
+  $$select public.set_user_banned(pgtap_helpers.uid_for('dave'), true, 'pgtap-test-pwd')$$,
+  'auth admin: set_user_banned(dave, true, bon mdp) OK'
+);
+
+-- 5.17 force_delete_piano(p1, bon mdp) → succès
+select lives_ok(
+  $$select public.force_delete_piano(pgtap_helpers.uid_for('p1'), 'pgtap-test-pwd')$$,
+  'auth admin: force_delete_piano(p1, bon mdp) OK'
+);
+
+-- 5.18 resolve_report(report1 existant) → succès
+select lives_ok(
+  $$select public.resolve_report(pgtap_helpers.uid_for('report1'))$$,
+  'auth admin: resolve_report(report1 existant) OK'
+);
+
+-- 5.19 reply_to_request(request1 existant, reply) → succès
+select lives_ok(
+  $$select public.reply_to_request(pgtap_helpers.uid_for('request1'), 'Réponse admin de test')$$,
+  'auth admin: reply_to_request(request1 existant) OK'
+);
+
+-- Vérifications DB (reset postgres : bypass RLS + column grants, plus simple/robuste)
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select ok(
+  (select banned_at is not null from public.profiles where id = pgtap_helpers.uid_for('dave')),
+  'DB: dave.banned_at renseigné après set_user_banned'
+);
+
+select ok(
+  (select is_deleted from public.pianos where id = pgtap_helpers.uid_for('p1')),
+  'DB: p1.is_deleted = true après force_delete_piano'
+);
+
+select ok(
+  (select resolved from public.piano_reports where id = pgtap_helpers.uid_for('report1')),
+  'DB: report1.resolved = true après resolve_report'
+);
+
+select is(
+  (select status from public.user_requests where id = pgtap_helpers.uid_for('request1')),
+  'answered',
+  'DB: request1.status = answered après reply_to_request'
+);
+
+select is(
+  (select admin_reply from public.user_requests where id = pgtap_helpers.uid_for('request1')),
+  'Réponse admin de test',
+  'DB: request1.admin_reply stocke bien la réponse'
+);
+
+select is(
+  (select replied_by from public.user_requests where id = pgtap_helpers.uid_for('request1')),
+  pgtap_helpers.uid_for('admin'),
+  'DB: request1.replied_by = admin'
+);
+
+-- 5.20 delete_my_account(bon mdp) — user dédié 'erin', jamais réutilisé ailleurs
+set local role authenticated;
+select set_config('request.jwt.claim.sub', pgtap_helpers.uid_for('erin')::text, true);
+
+select lives_ok(
+  $$select public.delete_my_account('pgtap-test-pwd')$$,
+  'auth erin: delete_my_account(bon mdp) OK'
+);
+
+reset role;
+select set_config('request.jwt.claim.sub', '', true);
+
+select is(
+  (select count(*)::int from public.profiles where id = pgtap_helpers.uid_for('erin')),
+  0,
+  'DB: erin absente de profiles après delete_my_account (cascade)'
+);
+
+select is(
+  (select count(*)::int from auth.users where id = pgtap_helpers.uid_for('erin')),
+  0,
+  'DB: erin absente de auth.users après delete_my_account'
 );
 
 select * from finish();

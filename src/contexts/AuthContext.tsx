@@ -89,6 +89,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const signOutInProgress = useRef(false)
 
+  /**
+   * Miroir de `user` lisible depuis le callback `onAuthStateChange` :
+   * ce callback est enregistré une seule fois par le useEffect ci-dessous
+   * (deps []) donc une closure sur `user` resterait figée à sa valeur au
+   * montage (toujours null). Le ref est tenu à jour à chaque changement de
+   * `user` et lu via `.current` pour avoir la valeur réelle au moment de
+   * l'event, sans avoir à réabonner onAuthStateChange à chaque connexion.
+   */
+  const userRef = useRef<User | null>(null)
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
   useEffect(() => {
     let mounted = true
 
@@ -161,7 +174,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // v8 Phase 1.5 — SIGNED_OUT involontaire (refresh token échu à cause
       // d'un 522) : on tente une récupération silencieuse avant d'accepter
       // la déconnexion. `signOutInProgress` distingue d'un signout user.
-      if (event === 'SIGNED_OUT' && !newSession && user && !signOutInProgress.current) {
+      if (
+        event === 'SIGNED_OUT' &&
+        !newSession &&
+        userRef.current &&
+        !signOutInProgress.current
+      ) {
         logger.warn('auth.stateChange', 'unexpected SIGNED_OUT, attempting refresh')
         try {
           const { data } = await withRetry(

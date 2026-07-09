@@ -39,7 +39,7 @@ export function DeletePianoDialog({
       toast.success('Piano supprimé')
       await queryClient.invalidateQueries({ queryKey: ['pianos'] })
       onClose()
-      navigate('/', { replace: true })
+      navigate('/map', { replace: true })
     } catch (err) {
       toast.error(getErrorMessage(err, 'Erreur de suppression'))
     } finally {
