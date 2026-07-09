@@ -1,10 +1,34 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import toast from 'react-hot-toast'
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '@/lib/supabase'
 import { logger } from '@/lib/logger'
 import { CGU_VERSION } from '@/lib/constants'
+import { withRetry } from '@/lib/net'
+import { isTransientNetworkError } from '@/lib/errors'
 import type { Profile } from '@/types/database'
+
+/**
+ * Prédicat de retry partagé pour tous les appels supabase.auth.* :
+ * on retente uniquement sur incident infra (5xx / 522 / fetch fail),
+ * jamais sur 400 (invalid password) ou 429 (rate-limit auth).
+ */
+const authRetryOpts = {
+  shouldRetry: isTransientNetworkError,
+  onRetry: (err: unknown, attempt: number, delayMs: number) => {
+    logger.warn('auth.retry', `transient error, retrying in ${delayMs}ms`, {
+      attempt,
+      err
+    })
+  }
+}
 
 /**
  * Source de vérité de la session côté React. Expose les actions auth (signup,
@@ -57,6 +81,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
 
+  /**
+   * v8 Phase 1.5 — flag pour distinguer un SIGNED_OUT *volontaire* (bouton
+   * "Se déconnecter") d'un SIGNED_OUT *involontaire* (refresh token échu à
+   * cause d'un 522). Sans ce flag, on ne peut pas savoir s'il faut tenter
+   * une récupération de session ou accepter la déconnexion.
+   */
+  const signOutInProgress = useRef(false)
+
+  /**
+   * Miroir de `user` lisible depuis le callback `onAuthStateChange` :
+   * ce callback est enregistré une seule fois par le useEffect ci-dessous
+   * (deps []) donc une closure sur `user` resterait figée à sa valeur au
+   * montage (toujours null). Le ref est tenu à jour à chaque changement de
+   * `user` et lu via `.current` pour avoir la valeur réelle au moment de
+   * l'event, sans avoir à réabonner onAuthStateChange à chaque connexion.
+   */
+  const userRef = useRef<User | null>(null)
+  useEffect(() => {
+    userRef.current = user
+  }, [user])
+
   useEffect(() => {
     let mounted = true
 
@@ -91,7 +136,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const init = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession()
+        // v8 Phase 1.5 — getSession peut échouer en 522 sur cold-start
+        // Supabase. On retente 3× avec backoff (~5.6s max) avant que le
+        // safety timer 8s ne prenne le relais.
+        const { data, error } = await withRetry(async () => {
+          const r = await supabase.auth.getSession()
+          if (r.error && isTransientNetworkError(r.error)) throw r.error
+          return r
+        }, authRetryOpts)
         if (error) logger.error('auth.getSession', 'failed', error)
         if (!mounted) return
         setSession(data.session)
@@ -116,8 +168,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     init()
 
-    const { data: sub } = supabase.auth.onAuthStateChange((event, newSession) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       logger.debug('auth.stateChange', event, { hasSession: !!newSession })
+
+      // v8 Phase 1.5 — SIGNED_OUT involontaire (refresh token échu à cause
+      // d'un 522) : on tente une récupération silencieuse avant d'accepter
+      // la déconnexion. `signOutInProgress` distingue d'un signout user.
+      if (
+        event === 'SIGNED_OUT' &&
+        !newSession &&
+        userRef.current &&
+        !signOutInProgress.current
+      ) {
+        logger.warn('auth.stateChange', 'unexpected SIGNED_OUT, attempting refresh')
+        try {
+          const { data } = await withRetry(
+            async () => {
+              const r = await supabase.auth.refreshSession()
+              if (r.error) throw r.error
+              return r
+            },
+            { ...authRetryOpts, attempts: 2 }
+          )
+          if (data.session) {
+            logger.info('auth.stateChange', 'refresh recovered session')
+            // supabase-js va émettre TOKEN_REFRESHED juste après → on laisse
+            // ce prochain event mettre à jour la session. On sort ici pour
+            // éviter le setUser(null) plus bas.
+            return
+          }
+        } catch (err) {
+          logger.warn('auth.stateChange', 'refresh recovery failed', { err })
+          toast.error('Session expirée pendant un incident réseau. Reconnecte-toi.', {
+            id: 'session-lost',
+            duration: 6000
+          })
+        }
+        // Recovery a échoué → on continue en dessous et on accepte le signout
+      }
+
       setSession(newSession)
       setUser(newSession?.user ?? null)
       if (newSession?.user) {
@@ -142,7 +231,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    // v8 Phase 1.5 — retry sur incidents transitoires (522/504/fetch fail)
+    // uniquement. Les 400 "mauvais password" throw immédiatement.
+    // signInWithPassword ne throw pas de lui-même — il retourne { error }.
+    // On throw explicitement en cas d'error transitoire pour laisser
+    // withRetry retenter ; sinon on retourne le résultat pour laisser le
+    // handling normal des erreurs métier.
+    const { error } = await withRetry(async () => {
+      const result = await supabase.auth.signInWithPassword({ email, password })
+      if (result.error && isTransientNetworkError(result.error)) throw result.error
+      return result
+    }, authRetryOpts)
     if (error) {
       logger.warn('auth.signIn', 'failed', { code: error.status, message: error.message })
       throw error
@@ -160,11 +259,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // check pseudo unique restent les filets) : on n'empêche pas un user
     // légitime de signup à cause d'une indispo de l'edge fn.
     try {
-      const { data: gate, error: gateError } = await supabase.functions.invoke<{
-        allowed: boolean
-        error?: string
-        message?: string
-      }>('signup-protected', { body: {} })
+      // v8 Phase 1.5 — retry sur incidents transitoires (2 tentatives, plus
+      // agressif que le safety fail-open standard pour ne pas trop retarder
+      // le signup si l'Edge Function est simplement down).
+      const { data: gate, error: gateError } = await withRetry(
+        () =>
+          supabase.functions.invoke<{
+            allowed: boolean
+            error?: string
+            message?: string
+          }>('signup-protected', { body: {} }),
+        { ...authRetryOpts, attempts: 2 }
+      )
       if (!gateError && gate && gate.allowed === false) {
         logger.warn('auth.signUp', 'ip_rate_limit blocked', { error: gate.error })
         throw new Error(
@@ -239,12 +345,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) {
-      logger.warn('auth.signOut', 'failed', { message: error.message })
-      throw error
+    // v8 Phase 1.5 — flag le signout comme volontaire pour empêcher
+    // onAuthStateChange de tenter une récupération de session.
+    signOutInProgress.current = true
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        logger.warn('auth.signOut', 'failed', { message: error.message })
+        throw error
+      }
+      logger.info('auth.signOut', 'success')
+    } finally {
+      // Petit délai pour laisser onAuthStateChange traiter le SIGNED_OUT avec
+      // le flag à true avant de le repasser à false (sinon race).
+      setTimeout(() => {
+        signOutInProgress.current = false
+      }, 500)
     }
-    logger.info('auth.signOut', 'success')
   }
 
   const resetPassword = async (email: string) => {

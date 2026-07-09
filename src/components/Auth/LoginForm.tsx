@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import toast from 'react-hot-toast'
 import { useAuth } from '@/contexts/AuthContext'
-import { getErrorMessage } from '@/lib/errors'
+import { getFriendlyErrorMessage } from '@/lib/errors'
 import { loginSchema, type LoginValues } from '@/lib/schemas'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -25,7 +25,7 @@ export function LoginForm() {
       await signIn(values.email, values.password)
       toast.success('Connecté')
     } catch (err) {
-      toast.error(getErrorMessage(err, 'Connexion échouée'))
+      toast.error(getFriendlyErrorMessage(err, { fallback: 'Connexion échouée' }))
     } finally {
       setSubmitting(false)
     }

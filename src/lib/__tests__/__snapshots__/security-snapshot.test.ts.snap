@@ -173,6 +173,14 @@ exports[`Security surface snapshot > Functions SECURITY DEFINER (sécurité-sens
   {
     "args": "",
     "language": "sql",
+    "name": "ping_health",
+    "returns": "text",
+    "searchPath": "public",
+    "security": "definer",
+  },
+  {
+    "args": "",
+    "language": "sql",
     "name": "purge_old_notifications",
     "returns": "void",
     "searchPath": "public",
@@ -634,6 +642,18 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
   {
     "grantee": "public",
     "object": "mark_notification_sent(uuid, text)",
+    "privileges": "all",
+    "type": "revoke",
+  },
+  {
+    "grantee": "anon, authenticated",
+    "object": "ping_health()",
+    "privileges": "execute",
+    "type": "grant",
+  },
+  {
+    "grantee": "public",
+    "object": "ping_health()",
     "privileges": "all",
     "type": "revoke",
   },
