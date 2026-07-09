@@ -7,8 +7,30 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="theme-color" content="#c97a1e" />
-    <title>PianoWorld</title>
-    <meta name="description" content="Carte interactive des pianos publics" />
+
+    <!-- SEO de base (v8 Phase 1) — servi statiquement à tous les crawlers,
+         avant même que React ne hydrate. Pas de pré-rendu pour l'instant
+         (les meta og:* suffisent pour Discord/Twitter/Facebook). -->
+    <title>PianoWorld — Carte communautaire des pianos publics</title>
+    <meta name="description" content="Trouve un piano public autour de toi, signale son état, planifie un créneau et joue avec la communauté. Démarrage à Rennes, carte ouverte partout." />
+    <link rel="canonical" href="https://pianoworld.app/" />
+
+    <!-- Open Graph (Facebook, LinkedIn, Discord, Slack) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="PianoWorld" />
+    <meta property="og:url" content="https://pianoworld.app/" />
+    <meta property="og:title" content="PianoWorld — Carte communautaire des pianos publics" />
+    <meta property="og:description" content="Trouve un piano public autour de toi, signale son état, planifie un créneau et joue avec la communauté." />
+    <meta property="og:image" content="https://pianoworld.app/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:locale" content="fr_FR" />
+
+    <!-- Twitter / X (Summary Large Image) -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="PianoWorld — Carte communautaire des pianos publics" />
+    <meta name="twitter:description" content="Trouve un piano public autour de toi, signale son état, planifie un créneau et joue avec la communauté." />
+    <meta name="twitter:image" content="https://pianoworld.app/og-image.png" />
   </head>
   <body>
     <div id="root"></div>

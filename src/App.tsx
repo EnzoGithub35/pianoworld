@@ -15,6 +15,9 @@ import { RequireAdmin } from '@/components/Layout/RequireAdmin'
 const AuthPage = lazy(() =>
   import('@/pages/AuthPage').then((m) => ({ default: m.AuthPage }))
 )
+const LandingPage = lazy(() =>
+  import('@/pages/LandingPage').then((m) => ({ default: m.LandingPage }))
+)
 const MapPage = lazy(() =>
   import('@/pages/MapPage').then((m) => ({ default: m.MapPage }))
 )
@@ -51,7 +54,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
     // Préserve la destination (pathname + search) pour que l'AuthPage redirige
     // l'user vers la page demandée après signIn. Sans ça, un newcomer qui clique
     // un lien de notif `/dashboard?tab=friends` et n'est pas loggué atterrit
-    // sur `/` après login et perd sa destination.
+    // sur `/map` après login et perd sa destination.
     const from = location.pathname + location.search + location.hash
     return <Navigate to="/auth" replace state={{ from }} />
   }
@@ -64,10 +67,13 @@ export default function App() {
       <OfflineBanner />
       <Suspense fallback={<SplashScreen />}>
         <Routes>
+          {/* Routes publiques (Phase 1 v8 — landing SEO ouverte) */}
+          <Route path="/" element={<LandingPage />} />
           <Route path="/auth/*" element={<AuthPage />} />
           <Route path="/piano/:id" element={<PianoPage />} />
           <Route path="/legal" element={<LegalPage />} />
 
+          {/* Routes protégées (AppShell = NavBar + CookieBanner) */}
           <Route
             element={
               <RequireAuth>
@@ -75,7 +81,7 @@ export default function App() {
               </RequireAuth>
             }
           >
-            <Route path="/" element={<MapPage />} />
+            <Route path="/map" element={<MapPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/settings" element={<SettingsPage />} />
@@ -92,6 +98,7 @@ export default function App() {
             }
           />
 
+          {/* Tout chemin inconnu retombe sur la landing publique. */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>

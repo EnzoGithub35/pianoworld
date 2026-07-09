@@ -13,6 +13,6 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
   if (loading) return <SplashScreen />
   if (!user) return <Navigate to="/auth" replace />
   if (!profile) return <SplashScreen />
-  if (!isAdmin) return <Navigate to="/" replace />
+  if (!isAdmin) return <Navigate to="/map" replace />
   return <>{children}</>
 }
