@@ -41,3 +41,8 @@ test-results/
 /ml
 .agents/
 PIANOWORLD_HANDOFF.md
+
+# Documentation projet — référence locale uniquement, ne suit plus git
+/CLAUDE.md
+/BRANCHING.md
+/docs/
