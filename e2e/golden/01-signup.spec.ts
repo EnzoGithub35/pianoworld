@@ -23,15 +23,14 @@ test.describe('signup', () => {
     await page.getByRole('button', { name: /créer mon compte/i }).click()
 
     // Sans email confirmation : signUp retourne une session immediatement.
-    // L'onAuthStateChange redirige vers '/' via AuthPage <Navigate>.
-    await page.waitForURL((url) => !url.pathname.startsWith('/auth'), {
-      timeout: 15_000
-    })
-
-    // Carte chargee (NavBar visible -> user authentifie)
-    await expect(page.locator('nav, [role="navigation"]').first()).toBeVisible({
-      timeout: 10_000
-    })
+    // L'onAuthStateChange redirige vers /map via AuthPage <Navigate>.
+    //
+    // v8 — / est desormais la landing publique (qui a elle-meme un <nav>
+    // visible), la carte est sur /map. Une regression de redirection
+    // laisserait l'utilisateur sur / sans que ca echoue avec un selecteur
+    // DOM generique type `nav, [role="navigation"]` — on verifie donc
+    // directement l'URL cible plutot que la presence d'un nav.
+    await page.waitForURL(/\/map/, { timeout: 15_000 })
   })
 
   test('signup avec pseudo deja pris -> erreur', async ({ page }) => {
