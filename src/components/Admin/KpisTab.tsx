@@ -13,6 +13,7 @@ import {
 import type { ComponentType } from 'react'
 import { useAdminKpis } from '@/hooks/useAdminKpis'
 import { Skeleton } from '@/components/ui/Skeleton'
+import { getErrorMessage } from '@/lib/errors'
 
 type Tone = 'neutral' | 'primary' | 'warning' | 'destructive'
 
@@ -48,7 +49,7 @@ function KpiCard({
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-xs text-muted-foreground">{label}</p>
-        <p className="mt-0.5 font-display text-xl font-bold tracking-tight">{value}</p>
+        <p className="font-display mt-0.5 text-xl font-bold tracking-tight">{value}</p>
         {hint && <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>}
       </div>
     </div>
@@ -56,7 +57,16 @@ function KpiCard({
 }
 
 export function KpisTab() {
-  const { data, isLoading } = useAdminKpis()
+  const { data, isLoading, isError, error } = useAdminKpis()
+
+  if (isError) {
+    return (
+      <div className="p-4 text-sm text-destructive">
+        Impossible de charger les statistiques :{' '}
+        {getErrorMessage(error, 'Erreur inconnue')}
+      </div>
+    )
+  }
 
   if (isLoading || !data) {
     return (
@@ -114,11 +124,7 @@ export function KpisTab() {
             icon={Sparkles}
             tone="primary"
           />
-          <KpiCard
-            label="Passages totaux"
-            value={data.visits_total}
-            icon={Footprints}
-          />
+          <KpiCard label="Passages totaux" value={data.visits_total} icon={Footprints} />
           <KpiCard
             label="Sessions récentes"
             value={data.sessions_active}

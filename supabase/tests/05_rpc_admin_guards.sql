@@ -9,7 +9,7 @@
 --  - delete_my_account : password required
 
 begin;
-select plan(28);
+select plan(30);
 
 -- ---------------------------------------------------------------
 -- Setup : alice (user), bob (user), admin (admin), boss (superadmin)
@@ -87,6 +87,14 @@ select throws_ok(
   'P0001',
   'invalid_password',
   'auth alice: delete_my_account(wrong-pwd) → invalid_password'
+);
+
+-- 5.7b admin_kpis : forbidden pour user normal
+select throws_ok(
+  $$select public.admin_kpis()$$,
+  'P0001',
+  'forbidden',
+  'auth alice: admin_kpis → forbidden'
 );
 
 -- ---------------------------------------------------------------
@@ -214,6 +222,12 @@ select lives_ok(
 select lives_ok(
   $$select public.reply_to_request(pgtap_helpers.uid_for('request1'), 'Réponse admin de test')$$,
   'auth admin: reply_to_request(request1 existant) OK'
+);
+
+-- 5.19b admin_kpis() → succès + valeur cohérente (au moins alice/bob/admin/boss existent)
+select ok(
+  (select users_total >= 4 from public.admin_kpis()),
+  'auth admin: admin_kpis() OK et users_total cohérent'
 );
 
 -- Vérifications DB (reset postgres : bypass RLS + column grants, plus simple/robuste)

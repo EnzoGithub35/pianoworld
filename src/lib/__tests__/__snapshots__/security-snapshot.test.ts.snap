@@ -11,6 +11,14 @@ exports[`Security surface snapshot > Functions SECURITY DEFINER (sécurité-sens
     "security": "definer",
   },
   {
+    "args": "",
+    "language": "plpgsql",
+    "name": "admin_kpis",
+    "returns": "table (users_total int, users_new_7d int, users_new_30d int, users_banned int, users_admin int, pianos_total int, pianos_new_7d int, visits_total int, sessions_active int, reports_open int, requests_open int)",
+    "searchPath": "public",
+    "security": "definer",
+  },
+  {
     "args": "q text default '', filter text default 'all', lim int default 50",
     "language": "plpgsql",
     "name": "admin_list_users",
@@ -336,6 +344,18 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
   {
     "grantee": "public, anon",
     "object": "accept_friend_request(uuid)",
+    "privileges": "all",
+    "type": "revoke",
+  },
+  {
+    "grantee": "authenticated",
+    "object": "admin_kpis()",
+    "privileges": "execute",
+    "type": "grant",
+  },
+  {
+    "grantee": "public",
+    "object": "admin_kpis()",
     "privileges": "all",
     "type": "revoke",
   },

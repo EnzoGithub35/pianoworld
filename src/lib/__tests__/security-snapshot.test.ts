@@ -234,7 +234,8 @@ describe('Security surface snapshot', () => {
       'force_delete_piano',
       'reply_to_request',
       'write_audit_log',
-      'admin_list_users'
+      'admin_list_users',
+      'admin_kpis'
     ]
     for (const name of adminRpcs) {
       const fn = fns.find((f) => f.name === name)
