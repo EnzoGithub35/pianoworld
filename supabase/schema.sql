@@ -1070,6 +1070,40 @@ end$$;
 revoke all on function public.admin_list_users(text, text, int) from public;
 grant execute on function public.admin_list_users(text, text, int) to authenticated;
 
+-- RPC admin : agrège les 11 KPIs du dashboard ("Vue d'ensemble") en 1 seul
+-- aller-retour. Remplace d'anciennes requêtes directes `profiles.select('*')`
+-- filtrées sur role/banned_at côté client, qui échouaient en 403 (colonnes
+-- exclues du grant 11.a) — cf. useAdminKpis.ts.
+create or replace function public.admin_kpis()
+returns table (users_total int, users_new_7d int, users_new_30d int, users_banned int, users_admin int, pianos_total int, pianos_new_7d int, visits_total int, sessions_active int, reports_open int, requests_open int)
+language plpgsql
+security definer
+stable
+set search_path = public
+as $$
+begin
+  if not public.is_admin() then
+    raise exception 'forbidden';
+  end if;
+  return query
+  select
+    (select count(*)::int from public.profiles),
+    (select count(*)::int from public.profiles where created_at >= now() - interval '7 days'),
+    (select count(*)::int from public.profiles where created_at >= now() - interval '30 days'),
+    (select count(*)::int from public.profiles where banned_at is not null),
+    (select count(*)::int from public.profiles where role in ('admin', 'superadmin')),
+    (select count(*)::int from public.pianos where is_deleted = false),
+    (select count(*)::int from public.pianos where is_deleted = false and created_at >= now() - interval '7 days'),
+    (select count(*)::int from public.piano_visits),
+    (select count(*)::int from public.piano_sessions
+       where cancelled_at is null and starts_at >= now() - interval '24 hours' and starts_at <= now()),
+    (select count(*)::int from public.piano_reports where resolved = false),
+    (select count(*)::int from public.user_requests where status = 'open');
+end$$;
+
+revoke all on function public.admin_kpis() from public;
+grant execute on function public.admin_kpis() to authenticated;
+
 -- 11.b. Rate limiting bulletproof
 -- Avant : within_rate_limit() était STABLE → snapshot du COUNT au début de
 -- transaction. Un INSERT batch ou Promise.all parallèle voit toujours le

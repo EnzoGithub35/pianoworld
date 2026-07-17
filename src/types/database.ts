@@ -603,6 +603,22 @@ export type Database = {
         Args: { q?: string; filter?: string; lim?: number }
         Returns: Profile[]
       }
+      admin_kpis: {
+        Args: Record<string, never>
+        Returns: {
+          users_total: number
+          users_new_7d: number
+          users_new_30d: number
+          users_banned: number
+          users_admin: number
+          pianos_total: number
+          pianos_new_7d: number
+          visits_total: number
+          sessions_active: number
+          reports_open: number
+          requests_open: number
+        }
+      }
       export_my_data: {
         Args: Record<string, never>
         Returns: unknown
