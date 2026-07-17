@@ -31,6 +31,7 @@ import {
   DEFAULT_MAP_CENTER,
   DEFAULT_MAP_ZOOM,
   DUPLICATE_DISTANCE_METERS,
+  GEOCODE_MIN_QUERY_LENGTH,
   PIANO_COMMENT_MAX,
   RATE_LIMITS
 } from '@/lib/constants'
@@ -104,22 +105,43 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
       .finally(() => setResolvingAddress(false))
   }, [coords])
 
+  // Biais géographique pour l'autocomplete Photon ("carte ouverte partout" —
+  // évite de biaiser vers Rennes un user hors Rennes). Résolution silencieuse,
+  // best-effort, au montage du flow. Ref (pas state) : on lit juste la
+  // DERNIÈRE valeur connue au moment de la recherche, sans re-render.
+  // Instance DÉDIÉE de useGeolocation — ne pas réutiliser `locate`/`locating`
+  // du bouton "Ma position" plus haut (sinon son spinner clignote et le
+  // bouton se désactive au montage, sans action de l'utilisateur).
+  const geoBiasRef = useRef<{ lat: number; lng: number } | null>(null)
+  const { locate: locateForBias } = useGeolocation()
+
+  useEffect(() => {
+    locateForBias()
+      .then((c) => {
+        geoBiasRef.current = c
+      })
+      .catch(() => {
+        // Refusé/indisponible/timeout → silencieux, searchAddress() retombe
+        // sur DEFAULT_MAP_CENTER (comportement actuel inchangé).
+      })
+  }, [locateForBias])
+
   // Sprint 6 — Debounce 300ms sur address pour autocomplete Photon. Skip si
   // address vient d'un reverseGeocode (skipAutocompleteRef) ou d'un pick
-  // suggestion. < 3 chars → clear suggestions sans appel réseau.
+  // suggestion. < GEOCODE_MIN_QUERY_LENGTH chars → clear suggestions sans appel réseau.
   useEffect(() => {
     if (skipAutocompleteRef.current) {
       skipAutocompleteRef.current = false
       return
     }
-    if (address.trim().length < 3) {
+    if (address.trim().length < GEOCODE_MIN_QUERY_LENGTH) {
       setAddressSuggestions([])
       setShowSuggestions(false)
       return
     }
     const t = window.setTimeout(() => {
       setSearchingAddress(true)
-      searchAddress(address)
+      searchAddress(address, { bias: geoBiasRef.current ?? undefined })
         .then((results) => {
           setAddressSuggestions(results)
           setShowSuggestions(results.length > 0)
@@ -354,11 +376,7 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
                   // que le blur close les suggestions.
                   window.setTimeout(() => setShowSuggestions(false), 150)
                 }}
-                placeholder={
-                  resolvingAddress
-                    ? 'Résolution…'
-                    : 'Tape une adresse ou clique sur la carte'
-                }
+                placeholder={resolvingAddress ? 'Résolution…' : 'Nom du lieu ou adresse…'}
                 role="combobox"
                 aria-autocomplete="list"
                 aria-expanded={showSuggestions}
@@ -390,31 +408,40 @@ export function AddPianoFlow({ onClose }: { onClose: () => void }) {
                         className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm hover:bg-accent"
                       >
                         <Search className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                        <span className="flex-1 leading-snug">{s.label}</span>
+                        <span className="flex-1 leading-snug">
+                          <span className="block">{s.label}</span>
+                          {s.category && (
+                            <span className="mt-0.5 block text-xs text-muted-foreground">
+                              {s.category}
+                            </span>
+                          )}
+                        </span>
                       </button>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-            {/* Sprint UX : encart fallback visible quand l'utilisateur a tapé ≥ 3
-                caractères mais Photon ne retourne aucune suggestion. Sans ça,
-                le user pense que l'app est cassée alors qu'il peut toujours
-                cliquer la carte pour positionner manuellement. */}
-            {address.trim().length >= 3 &&
+            {/* Sprint UX : encart fallback visible quand l'utilisateur a tapé
+                ≥ GEOCODE_MIN_QUERY_LENGTH caractères mais Photon ne retourne
+                aucune suggestion. Sans ça, le user pense que l'app est cassée
+                alors qu'il peut toujours cliquer la carte pour positionner
+                manuellement. */}
+            {address.trim().length >= GEOCODE_MIN_QUERY_LENGTH &&
             !searchingAddress &&
             addressSuggestions.length === 0 ? (
               <div className="flex items-start gap-2 rounded-md border border-dashed border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
                 <Search className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                 <span>
-                  Aucune adresse trouvée. <strong>Touche la carte</strong> pour
-                  positionner ton piano, ou re-essaye avec moins de mots.
+                  Aucun lieu ni adresse ne correspond. <strong>Touche la carte</strong>{' '}
+                  pour positionner ton piano, ou re-essaye avec moins de mots.
                 </span>
               </div>
             ) : (
               <p className="text-[11px] text-muted-foreground">
-                Tape une adresse (ex. « Gare de Rennes ») ou clique sur la carte. Tu
-                pourras toujours dragger le marker pour ajuster.
+                Cherche un lieu par son nom (« Université de Rennes 2 », « Leclerc
+                Saint-Grégoire »…) ou tape une adresse. Tu pourras toujours dragger le
+                marker pour ajuster.
               </p>
             )}
           </div>

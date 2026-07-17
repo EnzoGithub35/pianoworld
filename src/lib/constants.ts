@@ -32,6 +32,9 @@ export const PASSWORD_MIN_LENGTH = 8
 
 /** Géocodage : limite haute pour l'autocomplete Photon (rate-limit léger). */
 export const GEOCODE_AUTOCOMPLETE_LIMIT = 5
+/** Géocodage : longueur minimale de la query avant de requêter Photon
+ *  (sous ce seuil, aucun appel réseau — évite de spam Photon à chaque frappe). */
+export const GEOCODE_MIN_QUERY_LENGTH = 3
 
 /** Recherche utilisateurs : seuil minimum de caractères pour requêter. */
 export const USER_SEARCH_MIN_CHARS = 2
