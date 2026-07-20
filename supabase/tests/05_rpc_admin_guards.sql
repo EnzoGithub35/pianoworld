@@ -5,11 +5,13 @@
 --  - set_user_role : superadmin only, can't change self, can't demote last superadmin
 --  - set_user_banned : admin only + password required
 --  - force_delete_piano : admin only + password required
+--  - delete_my_piano : owner only (self soft-delete, pas de password)
 --  - resolve_report : admin only
 --  - delete_my_account : password required
+--  - admin_kpis : admin only
 
 begin;
-select plan(30);
+select plan(33);
 
 -- ---------------------------------------------------------------
 -- Setup : alice (user), bob (user), admin (admin), boss (superadmin)
@@ -19,9 +21,13 @@ select pgtap_helpers.create_test_user('bob');
 select pgtap_helpers.create_test_user('admin', 'admin');
 select pgtap_helpers.create_test_user('boss', 'superadmin');
 
--- Crée 1 piano pour bob
+-- Crée 2 pianos pour bob : p1 réservé au flow force_delete_piano (admin,
+-- plus bas), p2 dédié au flow delete_my_piano (self-delete owner) pour ne
+-- pas consommer p1 avant son propre test.
 insert into public.pianos(id, created_by, lat, lng, address, comment, quality)
 values (pgtap_helpers.uid_for('p1'), pgtap_helpers.uid_for('bob'), 48.8, 2.3, 'P1', 'C', 'bon_etat');
+insert into public.pianos(id, created_by, lat, lng, address, comment, quality)
+values (pgtap_helpers.uid_for('p2'), pgtap_helpers.uid_for('bob'), 48.9, 2.4, 'P2', 'C', 'bon_etat');
 
 -- ---------------------------------------------------------------
 -- Switch as alice (user normal)
@@ -55,6 +61,14 @@ select throws_ok(
   'P0001',
   'forbidden',
   'auth alice: force_delete_piano → forbidden'
+);
+
+-- 5.3b delete_my_piano : forbidden pour un non-propriétaire (p2 appartient à bob)
+select throws_ok(
+  $$select public.delete_my_piano(pgtap_helpers.uid_for('p2'))$$,
+  'P0001',
+  'forbidden',
+  'auth alice: delete_my_piano(p2, pas la sienne) → forbidden'
 );
 
 -- 5.4 resolve_report : forbidden
@@ -174,6 +188,17 @@ select is(
   'DB: bob est maintenant admin (vérifié via get_my_profile pour bypass column grant)'
 );
 
+-- 5.13b bob : delete_my_piano(p2, sa propre piano) OK — guard purement sur
+-- la propriété (created_by), pas sur le rôle, donc reste valide même si
+-- bob vient d'être promu admin juste au-dessus.
+-- Note : la vérification DB (p2.is_deleted) est faite plus bas, après
+-- `reset role` — juste après l'appel, p2 est invisible à bob lui-même sous
+-- pianos_select (is_deleted = false), donc un select ici renverrait 0 ligne.
+select lives_ok(
+  $$select public.delete_my_piano(pgtap_helpers.uid_for('p2'))$$,
+  'auth bob: delete_my_piano(p2, sa propre piano) OK'
+);
+
 -- =====================================================================
 -- Chemins de succès (le fichier ne couvrait que forbidden/invalid_password)
 -- =====================================================================
@@ -242,6 +267,11 @@ select ok(
 select ok(
   (select is_deleted from public.pianos where id = pgtap_helpers.uid_for('p1')),
   'DB: p1.is_deleted = true après force_delete_piano'
+);
+
+select ok(
+  (select is_deleted from public.pianos where id = pgtap_helpers.uid_for('p2')),
+  'DB: p2.is_deleted = true après delete_my_piano'
 );
 
 select ok(
