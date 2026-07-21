@@ -1675,6 +1675,32 @@ begin
   perform public.write_audit_log('force_delete_piano', target, '{}'::jsonb);
 end$$;
 
+-- RPC self : le propriétaire supprime (soft-delete) son propre piano. Sans
+-- cette RPC, un update client direct `set is_deleted = true` échoue sous RLS :
+-- la policy pianos_select (`is_deleted = false`) rend la ligne résultante
+-- invisible pour son propre auteur après coup, et Postgres refuse une UPDATE
+-- dont le résultat ne satisferait plus les policies de lecture de la table.
+-- SECURITY DEFINER contourne ça proprement (même schéma que
+-- force_delete_piano, sans mot de passe : action sur son propre contenu,
+-- pas une action admin irréversible sur le contenu d'un tiers).
+create or replace function public.delete_my_piano(target uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not exists (
+    select 1 from public.pianos where id = target and created_by = auth.uid()
+  ) then
+    raise exception 'forbidden';
+  end if;
+  update public.pianos set is_deleted = true where id = target;
+end$$;
+
+revoke all on function public.delete_my_piano(uuid) from public;
+grant execute on function public.delete_my_piano(uuid) to authenticated;
+
 create or replace function public.reply_to_request(request_id uuid, reply text)
 returns void
 language plpgsql

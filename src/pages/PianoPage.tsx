@@ -23,7 +23,7 @@ import { fromNow, formatDate } from '@/lib/date'
 export function PianoPage() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, isAdmin } = useAuth()
   const { data: piano, isLoading } = usePiano(id)
   const [editing, setEditing] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -81,22 +81,22 @@ export function PianoPage() {
           {piano.address}
         </h1>
         {isOwner && (
-          <>
-            <button
-              onClick={() => setEditing(true)}
-              aria-label="Modifier"
-              className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
-            >
-              <Pencil className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => setDeleting(true)}
-              aria-label="Supprimer"
-              className="flex h-11 w-11 items-center justify-center rounded-full text-destructive hover:bg-destructive/10"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </>
+          <button
+            onClick={() => setEditing(true)}
+            aria-label="Modifier"
+            className="flex h-11 w-11 items-center justify-center rounded-full hover:bg-accent"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
+        {(isOwner || isAdmin) && (
+          <button
+            onClick={() => setDeleting(true)}
+            aria-label="Supprimer"
+            className="flex h-11 w-11 items-center justify-center rounded-full text-destructive hover:bg-destructive/10"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
         )}
       </header>
 
@@ -225,6 +225,7 @@ export function PianoPage() {
       <DeletePianoDialog
         open={deleting}
         piano={piano}
+        mode={isOwner ? 'owner' : 'admin'}
         onClose={() => setDeleting(false)}
       />
     </div>

@@ -67,6 +67,14 @@ exports[`Security surface snapshot > Functions SECURITY DEFINER (sécurité-sens
     "security": "definer",
   },
   {
+    "args": "target uuid",
+    "language": "plpgsql",
+    "name": "delete_my_piano",
+    "returns": "void",
+    "searchPath": "public",
+    "security": "definer",
+  },
+  {
     "args": "p_action text, p_max int, p_window interval",
     "language": "plpgsql",
     "name": "enforce_caller_rate_limit",
@@ -446,6 +454,18 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
   {
     "grantee": "public",
     "object": "delete_my_account(text)",
+    "privileges": "all",
+    "type": "revoke",
+  },
+  {
+    "grantee": "authenticated",
+    "object": "delete_my_piano(uuid)",
+    "privileges": "execute",
+    "type": "grant",
+  },
+  {
+    "grantee": "public",
+    "object": "delete_my_piano(uuid)",
     "privileges": "all",
     "type": "revoke",
   },

@@ -567,6 +567,10 @@ export type Database = {
         Args: { target: string; p_password: string }
         Returns: undefined
       }
+      delete_my_piano: {
+        Args: { target: string }
+        Returns: undefined
+      }
       reply_to_request: {
         Args: { request_id: string; reply: string }
         Returns: undefined
