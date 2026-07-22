@@ -429,24 +429,6 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
   },
   {
     "grantee": "authenticated",
-    "object": "delete_my_account()",
-    "privileges": "execute",
-    "type": "grant",
-  },
-  {
-    "grantee": "public",
-    "object": "delete_my_account()",
-    "privileges": "all",
-    "type": "revoke",
-  },
-  {
-    "grantee": "public",
-    "object": "delete_my_account()",
-    "privileges": "all",
-    "type": "revoke",
-  },
-  {
-    "grantee": "authenticated",
     "object": "delete_my_account(text)",
     "privileges": "execute",
     "type": "grant",
@@ -532,24 +514,6 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
   {
     "grantee": "public",
     "object": "force_delete_piano(uuid, text)",
-    "privileges": "all",
-    "type": "revoke",
-  },
-  {
-    "grantee": "authenticated",
-    "object": "force_delete_piano(uuid)",
-    "privileges": "execute",
-    "type": "grant",
-  },
-  {
-    "grantee": "public",
-    "object": "force_delete_piano(uuid)",
-    "privileges": "all",
-    "type": "revoke",
-  },
-  {
-    "grantee": "public",
-    "object": "force_delete_piano(uuid)",
     "privileges": "all",
     "type": "revoke",
   },
@@ -826,24 +790,6 @@ exports[`Security surface snapshot > Grants & Revokes 1`] = `
   {
     "grantee": "public",
     "object": "set_user_banned(uuid, boolean, text)",
-    "privileges": "all",
-    "type": "revoke",
-  },
-  {
-    "grantee": "authenticated",
-    "object": "set_user_banned(uuid, boolean)",
-    "privileges": "execute",
-    "type": "grant",
-  },
-  {
-    "grantee": "public",
-    "object": "set_user_banned(uuid, boolean)",
-    "privileges": "all",
-    "type": "revoke",
-  },
-  {
-    "grantee": "public",
-    "object": "set_user_banned(uuid, boolean)",
     "privileges": "all",
     "type": "revoke",
   },
