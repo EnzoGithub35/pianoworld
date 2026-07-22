@@ -140,24 +140,14 @@ create policy piano_photos_delete_own on storage.objects
 -- 5. Fonction RGPD : suppression de compte (security definer)
 --    Permet à un user de supprimer son propre compte + cascade.
 -- ============================
-create or replace function public.delete_my_account()
-returns void
-language plpgsql
-security definer
-set search_path = public, auth
-as $$
-declare
-  uid uuid := auth.uid();
-begin
-  if uid is null then
-    raise exception 'not authenticated';
-  end if;
-  delete from auth.users where id = uid;
-end;
-$$;
-
-revoke all on function public.delete_my_account() from public;
-grant execute on function public.delete_my_account() to authenticated;
+--
+-- ⚠️ Sécu (fix post-v5) : cette section créait à l'origine
+-- delete_my_account() SANS mot de passe. La version durcie v5
+-- (delete_my_account(p_password), section 11) l'a remplacée par une
+-- signature DIFFÉRENTE plutôt que de la redéfinir — les deux signatures
+-- coexistaient donc en prod, l'ancienne restant appelable (bypass du
+-- re-auth password) tant qu'elle n'était pas explicitement droppée.
+drop function if exists public.delete_my_account();
 
 -- ============================
 -- 6. v2 — Activité : Passages + Sessions de présence
@@ -345,26 +335,15 @@ begin
   update public.profiles set role = new_role where id = target;
 end $$;
 
--- Bannir / débannir (admin ou superadmin, mais jamais un superadmin)
-create or replace function public.set_user_banned(target uuid, banned boolean)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare target_role user_role;
-begin
-  if not public.is_admin() then
-    raise exception 'forbidden';
-  end if;
-  select role into target_role from public.profiles where id = target;
-  if target_role = 'superadmin' then
-    raise exception 'cannot ban superadmin';
-  end if;
-  update public.profiles
-  set banned_at = case when banned then now() else null end
-  where id = target;
-end $$;
+-- ⚠️ Sécu (fix post-v5) : set_user_banned(target, banned) SANS mot de passe
+-- et force_delete_piano(target) SANS mot de passe créaient ici des
+-- signatures qui coexistaient avec leurs versions durcies v5 (avec
+-- p_password, section 11) — create or replace ne remplace que la même
+-- signature, une signature différente crée un 2e overload. Les anciennes
+-- restaient donc appelables directement (bypass du re-auth password sur
+-- deux actions irréversibles) tant qu'elles n'étaient pas droppées.
+drop function if exists public.set_user_banned(uuid, boolean);
+drop function if exists public.force_delete_piano(uuid);
 
 -- Marquer un report comme traité
 create or replace function public.resolve_report(report_id uuid)
@@ -380,28 +359,10 @@ begin
   update public.piano_reports set resolved = true where id = report_id;
 end $$;
 
--- Forcer suppression d'un piano (override ownership)
-create or replace function public.force_delete_piano(target uuid)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if not public.is_admin() then
-    raise exception 'forbidden';
-  end if;
-  update public.pianos set is_deleted = true where id = target;
-end $$;
-
 revoke all on function public.set_user_role(uuid, user_role) from public;
-revoke all on function public.set_user_banned(uuid, boolean) from public;
 revoke all on function public.resolve_report(uuid) from public;
-revoke all on function public.force_delete_piano(uuid) from public;
 grant execute on function public.set_user_role(uuid, user_role) to authenticated;
-grant execute on function public.set_user_banned(uuid, boolean) to authenticated;
 grant execute on function public.resolve_report(uuid) to authenticated;
-grant execute on function public.force_delete_piano(uuid) to authenticated;
 
 -- ============================
 -- 8. Évènements
@@ -1357,15 +1318,14 @@ begin
   delete from auth.users where id = uid;
 end$$;
 
--- Les signatures changent (nouveau paramètre p_password). Re-grant pour
--- couvrir la nouvelle signature ; l'ancienne n'est plus appelée par le
--- front. On peut conserver l'ancienne signature pour rétro-compat pendant
--- une migration ; ici on remplace direct.
-revoke all on function public.set_user_banned(uuid, boolean) from public;
+-- Les signatures changent (nouveau paramètre p_password) : create or
+-- replace ne remplace que la MÊME signature, donc les anciennes (sans
+-- p_password) sont désormais explicitement droppées plus haut (sections 5
+-- et 7) plutôt que simplement "revoke from public" — ce dernier ne suffit
+-- pas, `anon`/`authenticated` gardent l'exécution via les default
+-- privileges Supabase même après un revoke from public (constaté en prod).
 revoke all on function public.set_user_banned(uuid, boolean, text) from public;
-revoke all on function public.force_delete_piano(uuid) from public;
 revoke all on function public.force_delete_piano(uuid, text) from public;
-revoke all on function public.delete_my_account() from public;
 revoke all on function public.delete_my_account(text) from public;
 grant execute on function public.set_user_banned(uuid, boolean, text) to authenticated;
 grant execute on function public.force_delete_piano(uuid, text) to authenticated;
